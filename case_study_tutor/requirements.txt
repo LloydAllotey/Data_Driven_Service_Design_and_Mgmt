@@ -1,0 +1,8 @@
+# Core app
+streamlit>=1.32.0
+
+# AI
+openai>=1.30.0
+
+# Utilities
+python-dotenv>=1.0.0
