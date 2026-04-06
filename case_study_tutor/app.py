@@ -28,6 +28,11 @@ from pathlib import Path
 from typing import Optional
 
 import streamlit as st
+try:
+    from streamlit_autorefresh import st_autorefresh   # pip install streamlit-autorefresh
+    _AUTOREFRESH_AVAILABLE = True
+except ImportError:
+    _AUTOREFRESH_AVAILABLE = False
 
 # ── Path setup ────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).parent
@@ -319,6 +324,41 @@ div[data-testid="stForm"] .stButton > button[kind="primaryFormSubmit"] {
 .step-todo   { background: #E9ECEF; color: #999; }
 .step-line   { flex: 1; height: 2px; background: #E9ECEF; }
 .step-line-done { flex: 1; height: 2px; background: #27AE60; }
+
+/* ── Group chat ── */
+.chat-feed {
+    max-height: 260px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 4px 0 8px;
+}
+.chat-bubble-wrap-me    { display:flex; justify-content:flex-end; }
+.chat-bubble-wrap-other { display:flex; justify-content:flex-start; }
+.chat-bubble {
+    max-width: 82%;
+    padding: 7px 11px;
+    border-radius: 14px;
+    font-size: 0.83rem;
+    line-height: 1.45;
+    word-break: break-word;
+}
+.chat-bubble-me {
+    background: #003C87;
+    color: white !important;
+    border-bottom-right-radius: 4px;
+}
+.chat-bubble-other {
+    background: #F0F2F6;
+    color: #2C3E50 !important;
+    border-bottom-left-radius: 4px;
+}
+.chat-meta-me    { font-size:0.7rem; color:#999; text-align:right;  margin-top:2px; }
+.chat-meta-other { font-size:0.7rem; color:#999; text-align:left;   margin-top:2px; }
+.chat-empty {
+    text-align:center; color:#BBB; font-size:0.82rem; padding:20px 0;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -437,6 +477,21 @@ def _all_submitted(group_data: dict) -> bool:
     return len(group_data.get("submissions", {})) >= len(group_data.get("members", []))
 
 
+def _post_message(code: str, member: str, text: str) -> None:
+    """Append a chat message to the group session file."""
+    data = _load_session(code)
+    if data is None:
+        return
+    data.setdefault("chat", []).append({
+        "member": member,
+        "text": text.strip(),
+        "ts": datetime.now().strftime("%H:%M"),
+    })
+    # Keep at most 200 messages to avoid bloating the session file
+    data["chat"] = data["chat"][-200:]
+    _save_session(data)
+
+
 def _member_sections(group_data: dict, member: str) -> list[int]:
     """Return list of section IDs assigned to this member."""
     return group_data.get("section_assignments", {}).get(member, [1])
@@ -512,17 +567,83 @@ def _render_sidebar(group_data: dict, current_member: str):
         st.markdown("---")
         phase = group_data.get("phase", "waiting")
         phase_labels = {
-            "waiting":   "⏳ Waiting for members",
-            "reading":   "📖 Reading case",
-            "working":   "✍️ Analysing",
-            "aligning":  "🤖 Group alignment",
-            "synthesis": "🔗 Synthesis round",
-            "done":      "✅ Complete",
+            "lobby":         "⏳ Waiting for members",
+            "reading_ready": "📖 Ready to read",
+            "waiting":       "⏳ Waiting for members",
+            "reading":       "📖 Reading case",
+            "working":       "✍️ Analysing",
+            "aligning":      "🤖 Group alignment",
+            "synthesis":     "🔗 Synthesis round",
+            "done":          "✅ Complete",
         }
         st.markdown(f"**Phase:** {phase_labels.get(phase, phase)}")
 
-        if st.button("🔄 Refresh Group Status", use_container_width=True):
+        if st.button("🔄 Refresh", use_container_width=True):
             st.rerun()
+
+        # ── Group chat ────────────────────────────────────────────────────────
+        st.markdown("---")
+
+        # Auto-refresh every 8 s when the package is available
+        if _AUTOREFRESH_AVAILABLE:
+            st_autorefresh(interval=8_000, key="chat_refresh")
+
+        messages = group_data.get("chat", [])
+        unread_key = f"chat_seen_{code}"
+        seen = st.session_state.get(unread_key, 0)
+        unread = len(messages) - seen
+        badge = f" 🔴 {unread}" if unread > 0 else ""
+        st.markdown(f"**💬 Group Chat{badge}**")
+
+        # Message feed — rendered as HTML bubbles for a WhatsApp-style look
+        if messages:
+            bubbles = []
+            for msg in messages[-30:]:         # show last 30
+                is_me = msg["member"] == current_member
+                wrap  = "chat-bubble-wrap-me"    if is_me else "chat-bubble-wrap-other"
+                bub   = "chat-bubble chat-bubble-me" if is_me else "chat-bubble chat-bubble-other"
+                meta  = "chat-meta-me"           if is_me else "chat-meta-other"
+                name  = "You" if is_me else msg["member"]
+                bubbles.append(
+                    f'<div class="{wrap}">'
+                    f'  <div>'
+                    f'    <div class="{bub}">{msg["text"]}</div>'
+                    f'    <div class="{meta}">{name} · {msg["ts"]}</div>'
+                    f'  </div>'
+                    f'</div>'
+                )
+            st.markdown(
+                f'<div class="chat-feed">{"".join(bubbles)}</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<div class="chat-empty">No messages yet.<br>Say hi to your group! 👋</div>',
+                unsafe_allow_html=True,
+            )
+
+        # Mark messages as seen
+        st.session_state[unread_key] = len(messages)
+
+        # Message input — use a counter-based key so incrementing it on send
+        # creates a brand-new widget instance (naturally empty) on the next run.
+        # This avoids the StreamlitAPIException that occurs when you try to write
+        # to session_state for an already-instantiated widget key.
+        if "chat_input_n" not in st.session_state:
+            st.session_state["chat_input_n"] = 0
+        msg_key = f"chat_input_{st.session_state['chat_input_n']}"
+        new_msg = st.text_input(
+            "Message",
+            placeholder="Type a message…",
+            label_visibility="collapsed",
+            key=msg_key,
+        )
+        if st.button("Send →", use_container_width=True, key="chat_send"):
+            if new_msg.strip():
+                _post_message(code, current_member, new_msg.strip())
+                # Bump counter → next run gets a fresh widget key → input is blank
+                st.session_state["chat_input_n"] += 1
+                st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════

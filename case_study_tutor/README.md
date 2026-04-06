@@ -18,6 +18,7 @@ Design & Management* course at the University of St. Gallen (HSG).
 | **Free-rider detection** | Flags missing or low-effort contributions; non-accusatory group nudges |
 | **Fragmentation analysis** | Detects argument gaps & contradictions across submissions; scores group coherence 0–100 |
 | **Synthesis round** | Guides the group toward one integrated argument with a coaching note from the Group Alignment Agent |
+| **Group chat** | WhatsApp-style chat panel in the sidebar, available on every page; messages auto-refresh every 8 s; unread badge alerts members to new messages |
 
 ---
 
@@ -60,6 +61,10 @@ Synthesis  ←── each member contributes to one integrated answer
     ▼
 Done  ←── stats, all synthesis contributions, alignment report
 ```
+
+> 💬 **Group chat** is available in the sidebar on *every* page after login —
+> students can coordinate, flag cross-section connections, and resolve
+> disagreements without leaving their current step.
 
 ---
 
@@ -105,6 +110,11 @@ Opens at `http://localhost:8501`.
 8. Once all members have submitted, the Group Alignment Agent runs automatically.
 9. The group reviews the alignment report, discusses the scaffold questions, then
    each member writes their synthesis contribution.
+
+> **Group chat** is always available in the sidebar. Use it to flag connections
+> between sections, agree on shared framing, or nudge a quiet group member —
+> all without leaving your current page. Messages auto-refresh every 8 s and
+> an unread badge (🔴) alerts you when something new arrives.
 
 ---
 
@@ -165,7 +175,7 @@ case_study_tutor/
 │   ├── assign_sections_by_preferences()   # Greedy preference-matching algorithm
 │   └── assign_sections_to_members()       # Legacy round-robin fallback
 ├── config.json                    # AI model configuration
-├── requirements.txt
+├── requirements.txt               # includes streamlit-autorefresh for chat polling
 ├── .env.example                   # API key template
 ├── agents/
 │   ├── __init__.py
