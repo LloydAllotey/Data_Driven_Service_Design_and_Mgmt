@@ -1,9 +1,0 @@
-# Core app
-streamlit>=1.32.0
-streamlit-autorefresh>=1.0.1   # near-real-time group chat polling
-
-# AI
-openai>=1.30.0
-
-# Utilities
-python-dotenv>=1.0.0
