@@ -532,6 +532,148 @@ Synthesis (0-20):
 
         return results
 
+    def generate_group_feedback(
+        self,
+        group_data: dict,
+        section_titles: Dict[str, str],
+        integration_score: int,
+        c_scores: dict,
+    ) -> dict:
+        """
+        Generate a holistic group-level score and 2-3 sentence narrative shown
+        on the Done page.
+
+        group_score (0-100) is computed from:
+          - Average individual contribution score (40%)
+          - Argument integration/coherence score (30%)
+          - AI evaluation of cross-section synergies (30%)
+
+        Returns
+        -------
+        {
+            "group_score":  int,
+            "colour":       str,
+            "label":        str,
+            "summary":      str,   # 2-3 sentence narrative
+            "bullets":      List[str],  # 3 specific bullet points
+        }
+        """
+        members     = group_data.get("members", [])
+        submissions = group_data.get("submissions", {})
+        synth_subs  = group_data.get("synthesis_submissions", {})
+
+        # Structural inputs for the score
+        avg_individual = round(
+            sum(c_scores.get(m, {}).get("total", 0) for m in members) / max(len(members), 1)
+        )
+        engaged_count = sum(
+            1 for m in members if c_scores.get(m, {}).get("engagement", 0) > 0
+        )
+        submitted_count = len([m for m in members if m in submissions])
+
+        # Build compact member summary for LLM
+        member_lines = []
+        for m in members:
+            sub    = submissions.get(m, {})
+            synth  = synth_subs.get(m, {})
+            wc     = len(sub.get("text", "").split()) if sub else 0
+            syn_wc = len(synth.get("text", "").split()) if synth else 0
+            ind_sc = c_scores.get(m, {}).get("total", 0)
+            sec    = section_titles.get(m, "?")
+            member_lines.append(
+                f"- {m}: section={sec}, words={wc}, synthesis_words={syn_wc}, score={ind_sc}/100"
+            )
+
+        sub_excerpts = "\n\n".join(
+            f"[{m} — {section_titles.get(m,'?')}]:\n{submissions.get(m,{}).get('text','(none)')[:500]}"
+            for m in members if m in submissions
+        )
+        synth_excerpts = "\n\n".join(
+            f"[{m}]:\n{synth_subs.get(m,{}).get('text','(none)')[:350]}"
+            for m in members if m in synth_subs
+        )
+
+        prompt = f"""You are evaluating a student group that completed the Alpes Bank GenAI case study.
+
+GROUP DATA:
+- Members: {len(members)} | Submitted: {submitted_count} | Engaged cross-section: {engaged_count}
+- Average individual score: {avg_individual}/100
+- Argument integration score (from earlier analysis): {integration_score}/100
+
+MEMBER BREAKDOWN:
+{chr(10).join(member_lines)}
+
+INDIVIDUAL SUBMISSION EXCERPTS:
+{sub_excerpts}
+
+SYNTHESIS EXCERPTS:
+{synth_excerpts}
+
+Evaluate the GROUP as a whole (not individuals) and return ONLY valid JSON:
+{{
+  "group_score": <integer 0-100>,
+  "summary": "<2-3 sentence narrative covering: (1) whether the group collectively addressed the case well, (2) how well they connected sections and built synergies, (3) overall synthesis quality>",
+  "bullets": [
+    "<bullet 1: member participation and coverage — how many contributed meaningfully>",
+    "<bullet 2: cross-section connections and synergies built across the group>",
+    "<bullet 3: synthesis coherence — did the group converge on a shared, case-specific answer>"
+  ]
+}}
+
+GROUP SCORE RUBRIC (0-100):
+  80-100  All sections addressed well, strong cross-section links, coherent synthesis
+  60-79   Most sections covered, some integration, synthesis partially coherent
+  40-59   Uneven coverage, limited cross-section thinking, synthesis lacks depth
+  0-39    Major gaps — missing sections, isolated analyses, no real convergence
+
+RULES:
+- Be honest and specific — reference actual content from the excerpts
+- Each bullet: max 20 words, plain English
+- Summary: max 60 words total across all 3 sentences
+- Do NOT reveal expert answers or correct case analysis
+- Return valid JSON only, no markdown"""
+
+        raw = self._ai.chat(system=self.SYSTEM_PROMPT, user=prompt)
+
+        try:
+            clean = raw.strip()
+            if clean.startswith("```"):
+                clean = clean.split("```")[1]
+                if clean.startswith("json"):
+                    clean = clean[4:]
+            data    = json.loads(clean.strip())
+            score   = max(0, min(100, int(data.get("group_score", avg_individual))))
+            summary = str(data.get("summary", ""))
+            bullets = data.get("bullets", [])[:3]
+        except Exception as exc:
+            logger.warning(f"Could not parse group feedback JSON: {raw[:200]} — {exc}")
+            score   = avg_individual
+            summary = (
+                f"{submitted_count} of {len(members)} members submitted individual analyses. "
+                f"{engaged_count} member(s) connected their section to others. "
+                f"Group synthesis was submitted but overall coherence varies."
+            )
+            bullets = [
+                f"{submitted_count}/{len(members)} members contributed individual analyses.",
+                f"{engaged_count} member(s) referenced other sections in their work.",
+                "Synthesis submissions varied in depth and case specificity.",
+            ]
+
+        colour = "#27AE60" if score >= 75 else "#F39C12" if score >= 50 else "#E74C3C"
+        label  = (
+            "Strong group performance" if score >= 75
+            else "Solid effort with room to grow" if score >= 50
+            else "Group collaboration needs strengthening"
+        )
+
+        return {
+            "group_score": score,
+            "colour":      colour,
+            "label":       label,
+            "summary":     summary,
+            "bullets":     bullets,
+        }
+
     # ── Private helpers ─────────────────────────────────────────────────────
 
     def _build_free_rider_group_message(
