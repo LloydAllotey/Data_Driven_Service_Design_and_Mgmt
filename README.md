@@ -109,7 +109,7 @@ cp .env.example .env
 streamlit run app.py
 ```
 
-Opens at `http://localhost:8501`.
+Opens at `https://datadrivenservicedesignandmgmt-8q6xympjjf9tknu9xcrqww.streamlit.app/`.
 
 ---
 
@@ -209,7 +209,7 @@ Remote_Data_Driven/
 ├── components/               # Reusable UI building blocks (rendered inside pages)
 │   └── sidebar.py            # Sidebar panel, step indicator, contribution score donut
 │
-├── pages/                    # One file per screen — imports from core/ and components/
+├── views/                    # One file per screen — imports from core/ and components/
 │   ├── welcome.py            # Create / join group + interest-tag selection
 │   ├── lobby.py              # Waiting room until the full group has joined
 │   ├── reading.py            # Case reading + full-case accordion
@@ -231,7 +231,7 @@ Remote_Data_Driven/
 
 ```
 app.py
-  └── pages/*.py
+  └── views/*.py
         ├── core/workflow.py
         │     ├── database/storage.py
         │     ├── core/case_content.py
@@ -260,14 +260,3 @@ Supported clients: `groq` (default, free), `open_router`, `openai`.
 Set the matching key in `.env` (see `.env.example`).
 
 ---
-
-## Course context
-
-- **Course:** Data-Driven Service Design & Management (4 ECTS)
-- **Institution:** University of St. Gallen (HSG)
-- **Challenge:** Adapt the MAS prototype to support group-based business case analysis
-- **Case used:** *Alpes Bank's Journey to Creating Value at Scale with Generative AI*
-  (Harvard Business Case format)
-- **Teaching Note:** Used as the expert reference for agent calibration; never shown
-  to students (equivalent role to the expert concept map in the original MAS)
-- **Original prototype:** Diana Kozachek's MAS scaffolding system (concept maps)

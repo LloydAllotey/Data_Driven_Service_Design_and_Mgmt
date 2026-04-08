@@ -1,5 +1,5 @@
 """
-pages/welcome.py — Welcome / login page.
+views/welcome.py — Welcome / login page.
 """
 from __future__ import annotations
 

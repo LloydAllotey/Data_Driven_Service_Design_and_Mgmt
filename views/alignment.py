@@ -1,5 +1,5 @@
 """
-pages/alignment.py — Group alignment report page.
+views/alignment.py — Group alignment report page.
 """
 from __future__ import annotations
 

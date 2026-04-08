@@ -1,5 +1,5 @@
 """
-pages/synthesis.py — Group synthesis writing page.
+views/synthesis.py — Group synthesis writing page.
 """
 from __future__ import annotations
 

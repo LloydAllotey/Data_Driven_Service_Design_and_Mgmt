@@ -304,13 +304,13 @@ div[data-testid="stForm"] .stButton > button[kind="primaryFormSubmit"] {
 """, unsafe_allow_html=True)
 
 # ── Page imports (after sys.path is set) ─────────────────────────────────────
-from pages.welcome   import page_welcome    # noqa: E402
-from pages.lobby     import page_lobby      # noqa: E402
-from pages.reading   import page_reading    # noqa: E402
-from pages.working   import page_working    # noqa: E402
-from pages.alignment import page_alignment  # noqa: E402
-from pages.synthesis import page_synthesis  # noqa: E402
-from pages.summary   import page_summary    # noqa: E402
+from views.welcome   import page_welcome    # noqa: E402
+from views.lobby     import page_lobby      # noqa: E402
+from views.reading   import page_reading    # noqa: E402
+from views.working   import page_working    # noqa: E402
+from views.alignment import page_alignment  # noqa: E402
+from views.synthesis import page_synthesis  # noqa: E402
+from views.summary   import page_summary    # noqa: E402
 from database.storage import _load_session   # noqa: E402
 from core.workflow    import _all_submitted  # noqa: E402
 

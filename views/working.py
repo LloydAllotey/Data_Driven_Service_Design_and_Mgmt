@@ -1,5 +1,5 @@
 """
-pages/working.py — Individual analysis writing page.
+views/working.py — Individual analysis writing page.
 """
 from __future__ import annotations
 

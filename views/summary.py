@@ -1,5 +1,5 @@
 """
-pages/summary.py — Session summary / contribution report page.
+views/summary.py — Session summary / contribution report page.
 """
 from __future__ import annotations
 

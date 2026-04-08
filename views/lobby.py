@@ -1,5 +1,5 @@
 """
-pages/lobby.py — Waiting room shown after joining until the group is full.
+views/lobby.py — Waiting room shown after joining until the group is full.
 """
 from __future__ import annotations
 

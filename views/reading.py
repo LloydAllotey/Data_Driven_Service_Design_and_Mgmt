@@ -1,5 +1,5 @@
 """
-pages/reading.py — Case reading page.
+views/reading.py — Case reading page.
 """
 from __future__ import annotations
 
