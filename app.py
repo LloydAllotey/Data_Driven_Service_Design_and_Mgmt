@@ -727,6 +727,40 @@ def _trigger_ai_content_scoring(code: str, group_data: dict) -> dict:
     return group_data
 
 
+def _get_or_generate_group_feedback(code: str, gd: dict, c_scores: dict) -> dict:
+    """
+    Returns cached group feedback from the session JSON, or runs the AI to
+    generate it once and caches the result. Safe to call on every page load.
+    """
+    if gd.get("group_feedback"):
+        return gd["group_feedback"]
+
+    agent = _get_agent()
+    if not agent:
+        return {}
+
+    assignments = gd.get("section_assignments", {})
+    section_titles = {
+        m: get_section_by_id(assignments.get(m, [1])[0])["title"]
+        for m in gd.get("members", [])
+        if assignments.get(m)
+    }
+    reports = gd.get("alignment_reports", [])
+    integration_score = reports[-1]["fragmentation"]["score"] if reports else 0
+
+    try:
+        feedback = agent.generate_group_feedback(
+            gd, section_titles, integration_score, c_scores
+        )
+        fresh = _load_session(code)
+        if fresh is not None:
+            fresh["group_feedback"] = feedback
+            _save_session(fresh)
+        return feedback
+    except Exception:
+        return {}
+
+
 def _render_score_donut(my_score: dict) -> None:
     """
     Render a donut chart breaking down the contribution score.
@@ -2283,6 +2317,70 @@ def page_done():
                     f'</div>',
                     unsafe_allow_html=True,
                 )
+
+    # ── Group Contribution Score ───────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 🏆 Group Contribution Score")
+
+    all_synth_done = len(synth_subs) >= len(members)
+
+    if not all_synth_done:
+        st.info("The group score will appear once all members have submitted their synthesis.")
+    else:
+        fb = gd.get("group_feedback")
+        if not fb:
+            with st.spinner("✨ Generating group score and feedback — takes ~15 seconds…"):
+                fb = _get_or_generate_group_feedback(code, gd, c_scores)
+            if fb:
+                st.rerun()
+
+        if fb:
+            gs      = fb.get("group_score", 0)
+            gc      = fb.get("colour", "#888")
+            gl      = fb.get("label", "")
+            summary = fb.get("summary", "")
+            bullets = fb.get("bullets", [])
+
+            bullet_icons = ["🟢", "🔵", "🟡"]
+
+            st.markdown(
+                f'<div class="card" style="padding:28px 32px">'
+
+                # Top row: big score + label
+                f'<div style="display:flex;align-items:center;gap:32px;flex-wrap:wrap;margin-bottom:20px">'
+
+                # Score circle
+                f'<div style="text-align:center;min-width:120px">'
+                f'<div style="font-size:3.5rem;font-weight:800;color:{gc};line-height:1">{gs}</div>'
+                f'<div style="font-size:0.9rem;color:{gc};font-weight:600;margin-bottom:6px">/100</div>'
+                f'<div style="background:#E9ECEF;border-radius:99px;height:8px;max-width:100px;margin:0 auto;overflow:hidden">'
+                f'<div style="background:{gc};width:{gs}%;height:8px;border-radius:99px"></div>'
+                f'</div>'
+                f'<div style="font-size:0.78rem;color:#888;margin-top:6px">{gl}</div>'
+                f'</div>'
+
+                # Summary + bullets
+                f'<div style="flex:1;min-width:220px">'
+                f'<p style="font-size:0.92rem;color:#2C3E50;line-height:1.7;margin:0 0 16px">{summary}</p>'
+                + "".join(
+                    f'<div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:9px">'
+                    f'<span style="font-size:1rem;flex-shrink:0;margin-top:1px">{bullet_icons[i]}</span>'
+                    f'<span style="font-size:0.87rem;color:#444;line-height:1.55">{b}</span>'
+                    f'</div>'
+                    for i, b in enumerate(bullets)
+                )
+                + f'</div>'
+                f'</div>'
+
+                # Footer
+                f'<div style="font-size:0.72rem;color:#ccc;text-align:right;margin-top:4px">'
+                f'✨ AI-generated · based on individual scores, cross-section connections, and synthesis quality'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.warning("Group feedback could not be generated — check your API key in .env")
 
     st.markdown("---")
 
