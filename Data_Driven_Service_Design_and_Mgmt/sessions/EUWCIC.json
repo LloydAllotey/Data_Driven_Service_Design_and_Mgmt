@@ -1,0 +1,49 @@
+{
+  "group_code": "EUWCIC",
+  "created_at": "2026-04-08T12:19:23.242528",
+  "members": [
+    "Lloyd",
+    "James"
+  ],
+  "expected_size": 2,
+  "preferences": {
+    "Lloyd": [
+      "strategy",
+      "org_design",
+      "vendor"
+    ],
+    "James": [
+      "digital_transf",
+      "leadership"
+    ]
+  },
+  "section_assignments": {
+    "Lloyd": [
+      5,
+      1,
+      4
+    ],
+    "James": [
+      3,
+      2
+    ]
+  },
+  "submissions": {
+    "James": {
+      "section_id": 3,
+      "text": "test test test  test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test ",
+      "word_count": 45,
+      "submitted_at": "2026-04-08T12:22:28.886032"
+    },
+    "Lloyd": {
+      "section_id": 5,
+      "text": "test test test  test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test test \n",
+      "word_count": 45,
+      "submitted_at": "2026-04-08T12:22:37.862596"
+    }
+  },
+  "feedback": {},
+  "alignment_reports": [],
+  "synthesis_submissions": {},
+  "phase": "aligning"
+}
