@@ -34,6 +34,12 @@ try:
 except ImportError:
     _AUTOREFRESH_AVAILABLE = False
 
+try:
+    import plotly.graph_objects as go
+    _PLOTLY_AVAILABLE = True
+except ImportError:
+    _PLOTLY_AVAILABLE = False
+
 # ── Path setup ────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).parent
 SESSIONS_DIR = ROOT / "sessions"
@@ -389,7 +395,9 @@ def _new_group_code() -> str:
     return "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
 
 
-def _create_group(creator_name: str, group_size: int, preferences: list) -> dict:
+def _create_group(creator_name: str, group_size: int, preferences: list,
+                  internal_deadline: Optional[str] = None,
+                  external_deadline: Optional[str] = None) -> dict:
     code = _new_group_code()
     # Ensure unique
     while _session_path(code).exists():
@@ -400,6 +408,8 @@ def _create_group(creator_name: str, group_size: int, preferences: list) -> dict
         "members": [creator_name],
         "expected_size": group_size,
         "preferences": {creator_name: preferences},
+        "internal_deadline": internal_deadline,   # ISO str or None — individual submission deadline
+        "external_deadline": external_deadline,   # ISO str or None — synthesis / final deadline
         "section_assignments": {},
         "submissions": {},
         "feedback": {},
@@ -475,6 +485,352 @@ def _submit_synthesis(code: str, member: str, text: str) -> dict:
 
 def _all_submitted(group_data: dict) -> bool:
     return len(group_data.get("submissions", {})) >= len(group_data.get("members", []))
+
+
+def _compute_contribution_scores(group_data: dict) -> dict:
+    """
+    Compute a 0-100 Contribution Balance Score per member.
+
+    Components
+    ----------
+    Completion   0–10   On time (≤ individual deadline) = 10; after or missing = 0
+    Effort       0–20   Word count relative to group median
+    Substance    0–35   AI-evaluated: relevance, depth, case-specificity
+                        (structural fallback: sentence depth × vocabulary uniqueness)
+    Engagement   0–15   AI-evaluated: cross-section connections and integration
+                        (structural fallback: pattern-matched section references)
+    Synthesis    0–20   AI-evaluated: quality of synthesis contribution
+                        (structural fallback: word count + unique-word ratio)
+    ─────────────────────────────────────────────────────────────────────────
+    Total        0–100
+
+    AI scores are read from group_data["ai_content_scores"] when available
+    (computed once by _trigger_ai_content_scoring and cached in the session file).
+    Until AI scoring runs, structural heuristics are used as provisional scores.
+    """
+    import statistics, re
+
+    members       = group_data.get("members", [])
+    submissions   = group_data.get("submissions", {})
+    synth_subs    = group_data.get("synthesis_submissions", {})
+    internal_dl   = group_data.get("internal_deadline")
+    ai_cache      = group_data.get("ai_content_scores", {})   # cached AI scores
+
+    member_set = set(m.lower() for m in members)
+
+    word_counts = [
+        submissions[m].get("word_count", 0)
+        for m in members
+        if m in submissions and submissions[m].get("word_count", 0) > 0
+    ]
+    median_wc = statistics.median(word_counts) if word_counts else 0
+
+    # ── Structural helpers (fallback only) ────────────────────────────────────
+    def _unique_word_ratio(text: str) -> float:
+        content_words = [w for w in re.findall(r'[a-z]+', text.lower()) if len(w) > 3]
+        if not content_words:
+            return 0.0
+        return len(set(content_words)) / len(content_words)
+
+    def _sentence_rep_ratio(text: str) -> float:
+        sents = [s.strip().lower() for s in re.split(r'[.!?]', text) if len(s.strip()) > 8]
+        if not sents:
+            return 0.0
+        return 1 - (len(set(sents)) / len(sents))
+
+    scores = {}
+    for member in members:
+        sub        = submissions.get(member)
+        synth      = synth_subs.get(member)
+        member_ai  = ai_cache.get(member, {})   # {} if AI not yet run
+        ai_scored  = bool(member_ai)             # True once AI has evaluated
+
+        # ── 1. Completion (0–10) ──────────────────────────────────────────────
+        if sub:
+            if internal_dl:
+                try:
+                    submitted_at = datetime.fromisoformat(sub.get("submitted_at", ""))
+                    deadline_dt  = datetime.fromisoformat(internal_dl)
+                    on_time      = submitted_at <= deadline_dt
+                    completion   = 10 if on_time else 0
+                    on_time_label = (
+                        "Submitted on time ✓"
+                        if on_time
+                        else "Submitted after individual deadline"
+                    )
+                except Exception:
+                    completion, on_time, on_time_label = 7, None, "No deadline set"
+            else:
+                completion, on_time, on_time_label = 7, None, "No deadline set"
+        else:
+            completion, on_time, on_time_label = 0, False, "Not submitted"
+
+        # ── 2. Effort relative to median (0–20) ───────────────────────────────
+        wc = sub.get("word_count", 0) if sub else 0
+        if median_wc > 0 and wc > 0:
+            ratio = wc / median_wc
+            if   ratio >= 1.0:  effort = 20; effort_label = f"{wc} words — at or above group median"
+            elif ratio >= 0.75: effort = 15; effort_label = f"{wc} words — slightly below group median"
+            elif ratio >= 0.5:  effort = 10; effort_label = f"{wc} words — well below group median"
+            elif ratio >= 0.25: effort = 5;  effort_label = f"{wc} words — much shorter than peers"
+            else:               effort = 0;  effort_label = f"{wc} words — minimal contribution"
+        elif wc > 0:
+            effort = 14; effort_label = f"{wc} words (only submitter, no group median yet)"
+        else:
+            effort = 0;  effort_label = "No submission"
+
+        # ── 3. Substance (0–35) — AI-primary, structural fallback ─────────────
+        if ai_scored and "substance" in member_ai:
+            substance       = member_ai["substance"]
+            substance_label = member_ai.get("substance_feedback", "")
+            substance_source = "ai"
+        elif sub:
+            text      = sub.get("text", "")
+            raw_sents = [s.strip() for s in re.split(r'[.!?]', text) if len(s.strip()) > 8]
+            n_sent    = len(raw_sents)
+            uwr       = _unique_word_ratio(text)
+            srr       = _sentence_rep_ratio(text)
+            depth_pts = min(n_sent, 10) * 2.0                          # 0-20
+            quality_m = max(0.0, min(1.0, (uwr - 0.35) / 0.30))
+            sent_pen  = srr * 5
+            raw_sub   = depth_pts * quality_m - sent_pen
+            substance = max(0, min(35, round(raw_sub * (35 / 20))))    # scale to 35
+            if uwr < 0.35:
+                substance_label = (
+                    f"⚠️ High word repetition ({round(uwr*100)}% unique words) — "
+                    f"provisional score, AI evaluation pending"
+                )
+            elif n_sent >= 8:
+                substance_label = f"{n_sent} sentences, {round(uwr*100)}% vocabulary variety — provisional, AI evaluation pending"
+            else:
+                substance_label = f"{n_sent} sentences — provisional score, AI evaluation pending"
+            substance_source = "structural"
+        else:
+            substance = 0; substance_label = "No submission"; substance_source = "structural"
+
+        # ── 4. Engagement (0–15) — AI-primary, structural fallback ───────────
+        if ai_scored and "engagement" in member_ai:
+            engagement       = member_ai["engagement"]
+            engagement_label = member_ai.get("engagement_feedback", "")
+            engagement_source = "ai"
+        elif sub:
+            text_lower = sub.get("text", "").lower()
+            sec_refs = re.findall(
+                r'§\s*[1-5]|section\s+[1-5one-five]|sect\.\s*[1-5]|\bpart\s+[1-5]\b',
+                text_lower,
+            )
+            peer_refs = [
+                m for m in member_set
+                if m != member.lower() and len(m) > 2 and m in text_lower
+            ]
+            total_refs = len(set(sec_refs)) + len(peer_refs)
+            engagement = min(15, total_refs * 5)
+            if total_refs == 0:
+                engagement_label = "No cross-section references detected — provisional, AI evaluation pending"
+            elif total_refs == 1:
+                engagement_label = f"1 cross-section reference — provisional, AI evaluation pending"
+            else:
+                engagement_label = f"{total_refs} cross-section references — provisional, AI evaluation pending"
+            engagement_source = "structural"
+        else:
+            engagement = 0; engagement_label = "No submission"; engagement_source = "structural"
+
+        # ── 5. Synthesis (0–20) — AI-primary, structural fallback ────────────
+        if ai_scored and "synthesis" in member_ai:
+            synthesis       = member_ai["synthesis"]
+            synthesis_label = member_ai.get("synthesis_feedback", "")
+            synthesis_source = "ai"
+        elif synth:
+            synth_text = synth.get("text", "")
+            synth_wc   = len(synth_text.split())
+            synth_uwr  = _unique_word_ratio(synth_text)
+            if synth_wc >= 30 and synth_uwr >= 0.40:
+                synthesis = 20
+                synthesis_label = f"Contributed {synth_wc} words — provisional, AI evaluation pending"
+            elif synth_wc >= 30:
+                synthesis = 10
+                synthesis_label = (
+                    f"⚠️ High repetition in synthesis ({round(synth_uwr*100)}% unique) — "
+                    f"provisional, AI evaluation pending"
+                )
+            elif synth_wc > 0:
+                synthesis = 5
+                synthesis_label = f"Only {synth_wc} words — too short (min. 30), provisional"
+            else:
+                synthesis = 0; synthesis_label = "Did not contribute to synthesis"
+            synthesis_source = "structural"
+        else:
+            synthesis = 0; synthesis_label = "Did not contribute to synthesis"; synthesis_source = "structural"
+
+        total = completion + effort + substance + engagement + synthesis
+
+        if   total >= 80: colour = "#27AE60"; label = "Excellent"
+        elif total >= 60: colour = "#F39C12"; label = "Good"
+        elif total >= 40: colour = "#E67E22"; label = "Needs improvement"
+        else:             colour = "#E74C3C"; label = "Low contribution"
+
+        scores[member] = {
+            "total":             total,
+            "completion":        completion,
+            "effort":            effort,
+            "substance":         substance,
+            "engagement":        engagement,
+            "synthesis":         synthesis,
+            "ai_scored":         ai_scored,
+            "word_count":        wc,
+            "median_wc":         round(median_wc),
+            "on_time":           on_time,
+            "on_time_label":     on_time_label,
+            "effort_label":      effort_label,
+            "substance_label":   substance_label,
+            "engagement_label":  engagement_label,
+            "synthesis_label":   synthesis_label,
+            "colour":            colour,
+            "label":             label,
+        }
+
+    return scores
+
+
+def _trigger_ai_content_scoring(code: str, group_data: dict) -> dict:
+    """
+    Calls the GroupAlignmentAgent to AI-evaluate Substance, Engagement, and Synthesis
+    for all members. Caches results in the session file under 'ai_content_scores'.
+    Returns the updated group_data dict (with ai_content_scores populated).
+    """
+    agent = _get_agent()
+    if not agent:
+        return group_data
+
+    assignments = group_data.get("section_assignments", {})
+    section_titles = {
+        m: get_section_by_id(assignments.get(m, [1])[0])["title"]
+        for m in group_data.get("members", [])
+        if assignments.get(m)
+    }
+
+    try:
+        ai_scores = agent.score_contributions(group_data, section_titles)
+        # Reload fresh copy in case another member saved in the meantime
+        fresh = _load_session(code)
+        if fresh is not None:
+            fresh["ai_content_scores"] = ai_scores
+            _save_session(fresh)
+            return fresh
+        group_data["ai_content_scores"] = ai_scores
+        _save_session(group_data)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        st.warning(f"AI content scoring failed: {e}")
+
+    return group_data
+
+
+def _render_score_donut(my_score: dict) -> None:
+    """
+    Render a donut chart breaking down the contribution score.
+    Uses plotly when available; falls back to a pure CSS/HTML conic-gradient
+    chart that works with zero additional dependencies.
+    """
+    components = [
+        ("Completion",  my_score.get("completion", 0),  "#27AE60"),
+        ("Effort",      my_score.get("effort",     0),  "#3498DB"),
+        ("Substance",   my_score.get("substance",  0),  "#8E44AD"),
+        ("Engagement",  my_score.get("engagement", 0),  "#16A085"),
+        ("Synthesis",   my_score.get("synthesis",  0),  "#E67E22"),
+    ]
+    total  = sum(v for _, v, _ in components)
+    missed = max(0, 100 - total)
+    colour = my_score.get("colour", "#2C3E50")
+
+    # ── Plotly version (richer, interactive) ─────────────────────────────────
+    if _PLOTLY_AVAILABLE:
+        labels  = [c[0] for c in components] + ["Missed"]
+        values  = [c[1] for c in components] + [missed]
+        colours = [c[2] for c in components] + ["#ECEFF1"]
+
+        fig = go.Figure(data=[go.Pie(
+            labels=labels,
+            values=values,
+            hole=0.62,
+            marker=dict(colors=colours, line=dict(color="#ffffff", width=2)),
+            textinfo="label+value",
+            hovertemplate="%{label}: %{value} pts<extra></extra>",
+            sort=False,
+        )])
+        fig.update_layout(
+            annotations=[dict(
+                text=f"<b>{total}</b><br>/100",
+                x=0.5, y=0.5,
+                font=dict(size=20, color=colour),
+                showarrow=False,
+            )],
+            showlegend=True,
+            legend=dict(orientation="h", yanchor="bottom", y=-0.28, xanchor="center", x=0.5),
+            margin=dict(l=10, r=10, t=10, b=40),
+            height=320,
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+        )
+        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        return
+
+    # ── CSS conic-gradient fallback (no extra dependencies) ──────────────────
+    # Build conic-gradient stops (each component occupies its score % of the circle)
+    stops = []
+    cursor = 0
+    for _, val, col in components:
+        if val > 0:
+            stops.append(f"{col} {cursor}% {cursor + val}%")
+            cursor += val
+    if missed > 0:
+        stops.append(f"#ECEFF1 {cursor}% 100%")
+    gradient = ", ".join(stops) if stops else "#ECEFF1 0% 100%"
+
+    # Legend rows
+    legend_rows = "".join(
+        f'<div style="display:flex;align-items:center;gap:7px;margin-bottom:5px">'
+        f'<div style="width:11px;height:11px;border-radius:3px;background:{col};flex-shrink:0"></div>'
+        f'<span style="font-size:0.78rem;color:#444">{name} <strong>{val}</strong>/{"10" if name=="Completion" else "20" if name in ("Effort","Synthesis") else "35" if name=="Substance" else "15"}</span>'
+        f'</div>'
+        for name, val, col in components
+    )
+    legend_rows += (
+        f'<div style="display:flex;align-items:center;gap:7px;margin-top:4px">'
+        f'<div style="width:11px;height:11px;border-radius:3px;background:#ECEFF1;'
+        f'border:1px solid #ccc;flex-shrink:0"></div>'
+        f'<span style="font-size:0.78rem;color:#aaa">Missed <strong>{missed}</strong></span>'
+        f'</div>'
+    )
+
+    html = f"""
+<div style="display:flex;align-items:center;justify-content:center;gap:28px;padding:12px 4px">
+  <!-- Donut ring -->
+  <div style="position:relative;width:155px;height:155px;flex-shrink:0">
+    <div style="
+      width:155px;height:155px;border-radius:50%;
+      background:conic-gradient({gradient});
+    "></div>
+    <!-- Centre hole -->
+    <div style="
+      position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+      width:88px;height:88px;border-radius:50%;
+      background:white;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      box-shadow:inset 0 0 6px rgba(0,0,0,0.04);
+    ">
+      <span style="font-size:1.75rem;font-weight:800;color:{colour};line-height:1">{total}</span>
+      <span style="font-size:0.7rem;color:#aaa">/100</span>
+    </div>
+  </div>
+  <!-- Legend -->
+  <div style="min-width:140px">
+    {legend_rows}
+  </div>
+</div>
+"""
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def _post_message(code: str, member: str, text: str) -> None:
@@ -563,6 +919,49 @@ def _render_sidebar(group_data: dict, current_member: str):
                 f'<div style="font-size:0.72rem;color:#999;padding-left:21px;margin-bottom:4px">{sec_labels}</div>',
                 unsafe_allow_html=True,
             )
+
+        # ── Deadlines ─────────────────────────────────────────────────────────
+        int_dl = group_data.get("internal_deadline")
+        ext_dl = group_data.get("external_deadline")
+        if int_dl or ext_dl:
+            st.markdown("---")
+            st.markdown("**⏰ Deadlines**")
+            if int_dl:
+                d = datetime.fromisoformat(int_dl)
+                past = datetime.now() > d
+                flag = " ⚠️" if past else ""
+                st.markdown(f'<div style="font-size:0.82rem;color:{"#E74C3C" if past else "#2C3E50"}">📝 Individual submission: <strong>{d.strftime("%d %b %Y")}</strong>{flag}</div>', unsafe_allow_html=True)
+            if ext_dl:
+                d = datetime.fromisoformat(ext_dl)
+                past = datetime.now() > d
+                flag = " ⚠️" if past else ""
+                st.markdown(f'<div style="font-size:0.82rem;color:{"#E74C3C" if past else "#2C3E50"}">🏁 Final submission: <strong>{d.strftime("%d %b %Y")}</strong>{flag}</div>', unsafe_allow_html=True)
+
+        # ── Live contribution scores ───────────────────────────────────────────
+        c_scores = _compute_contribution_scores(group_data)
+        if any(c_scores[m]["total"] > 0 for m in c_scores):
+            st.markdown("---")
+            st.markdown("**📊 Contribution Balance**")
+            for m in members:
+                cs = c_scores.get(m, {})
+                total  = cs.get("total", 0)
+                colour = cs.get("colour", "#BDC3C7")
+                lbl    = cs.get("label", "—")
+                you    = " (you)" if m == current_member else ""
+                bar_w  = total
+                st.markdown(
+                    f'<div style="margin-bottom:8px">'
+                    f'<div style="display:flex;justify-content:space-between;font-size:0.8rem;margin-bottom:2px">'
+                    f'<span style="font-weight:500;color:#2C3E50">{m}{you}</span>'
+                    f'<span style="font-weight:700;color:{colour}">{total}/100</span>'
+                    f'</div>'
+                    f'<div style="background:#E9ECEF;border-radius:99px;height:6px;overflow:hidden">'
+                    f'<div style="background:{colour};width:{bar_w}%;height:6px;border-radius:99px"></div>'
+                    f'</div>'
+                    f'<div style="font-size:0.7rem;color:#888;margin-top:1px">{lbl}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
         st.markdown("---")
         phase = group_data.get("phase", "waiting")
@@ -680,15 +1079,33 @@ def page_welcome():
                     max_selections=4,
                     label_visibility="collapsed",
                 )
+                st.markdown("**Deadlines** *(optional — helps track timely contribution)*")
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    internal_date = st.date_input(
+                        "📝 Individual submissions by",
+                        value=None,
+                        help="Members should submit their section analysis before this date.",
+                    )
+                with col_dl2:
+                    external_date = st.date_input(
+                        "🏁 Final submission",
+                        value=None,
+                        help="The group synthesis round should be completed by this date.",
+                    )
                 submitted = st.form_submit_button("Create Group →", use_container_width=True)
                 if submitted:
                     if not name.strip():
                         st.error("Please enter your name.")
                     elif len(selected_bw) < 1:
                         st.error("Please select at least one interest area so we can match you to the right section.")
+                    elif internal_date and external_date and internal_date > external_date:
+                        st.error("⚠️ The individual submission deadline cannot be after the final submission deadline. Please correct the dates.")
                     else:
                         prefs = [bw_slug_map[b] for b in selected_bw]
-                        gd = _create_group(name.strip(), size, prefs)
+                        int_dl = datetime(internal_date.year, internal_date.month, internal_date.day, 23, 59).isoformat() if internal_date else None
+                        ext_dl = datetime(external_date.year, external_date.month, external_date.day, 23, 59).isoformat() if external_date else None
+                        gd = _create_group(name.strip(), size, prefs, int_dl, ext_dl)
                         st.session_state["member"] = name.strip()
                         st.session_state["group_code"] = gd["group_code"]
                         st.session_state["page"] = "lobby"
@@ -1323,47 +1740,116 @@ def page_alignment():
     fr   = latest.get("free_rider", {})
     frag = latest.get("fragmentation", {})
 
-    # ── Free-rider panel ─────────────────────────────────────────────────────
+    # ── Contribution Balance panel ────────────────────────────────────────────
+    c_scores = _compute_contribution_scores(gd)
+    group_avg = round(sum(c_scores[m]["total"] for m in members) / max(len(members), 1))
+
     col1, col2 = st.columns([1, 1])
 
     with col1:
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("#### 👥 Contribution Balance")
+        st.markdown("#### 📊 Contribution Balance")
+
+        # Group-level summary
+        avg_colour = "#27AE60" if group_avg >= 70 else "#F39C12" if group_avg >= 50 else "#E74C3C"
+        st.markdown(
+            f'<div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px">'
+            f'<span style="font-size:2rem;font-weight:700;color:{avg_colour}">{group_avg}</span>'
+            f'<span style="font-size:1rem;color:#888">/100 group average</span>'
+            f'</div>'
+            f'<div class="score-track" style="margin-bottom:16px">'
+            f'<div style="background:{avg_colour};width:{group_avg}%;height:10px;border-radius:99px"></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
+
+        # ── Group-level narrative (Diana's recommendation) ───────────────────
+        submitted_count   = sum(1 for m in members if c_scores.get(m, {}).get("total", 0) > 0)
+        engaged_count     = sum(1 for m in members if c_scores.get(m, {}).get("engagement", 0) > 0)
+        scores_list       = [c_scores.get(m, {}).get("total", 0) for m in members]
+        max_score         = max(scores_list) if scores_list else 0
+        heavy_reliance    = max_score > 0 and (max_score - min(scores_list)) >= 35
+
+        if submitted_count == len(members):
+            contrib_msg = "All members have submitted — well done!"
+        elif submitted_count == 0:
+            contrib_msg = "No submissions yet."
+        else:
+            missing_n = len(members) - submitted_count
+            contrib_msg = f"{submitted_count} of {len(members)} members have submitted; {missing_n} still missing."
+
+        if heavy_reliance:
+            reliance_msg = "⚠️ The group is relying heavily on one or two members — consider redistributing effort before synthesis."
+        else:
+            reliance_msg = "Contribution is reasonably balanced across the group."
+
+        if engaged_count == len(members):
+            integration_msg = f"All {len(members)} members referenced other sections — strong cross-section integration."
+        elif engaged_count == 0:
+            integration_msg = "No members have referenced other sections yet — add cross-section links to boost your Engagement score."
+        else:
+            integration_msg = f"{engaged_count} of {len(members)} members connected their section to others."
+
+        st.markdown(
+            f'<div style="background:#F0F4FF;border-left:3px solid #003C87;border-radius:6px;'
+            f'padding:10px 14px;margin-bottom:14px;font-size:0.83rem;line-height:1.6">'
+            f'📋 <strong>Group snapshot:</strong> {contrib_msg} {reliance_msg} {integration_msg}'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
 
         if fr.get("has_issue"):
             st.markdown(
-                f'<div class="feedback-box-warn">'
+                f'<div class="feedback-box-warn" style="margin-bottom:12px">'
                 f'⚠️ {fr.get("group_message","")}'
                 f'</div>',
                 unsafe_allow_html=True,
             )
-        else:
-            st.markdown(
-                '<div class="feedback-box-success">'
-                '✅ All members have contributed a substantive analysis.</div>',
-                unsafe_allow_html=True,
-            )
 
-        st.markdown("**Submission overview:**")
+        st.markdown("**Score breakdown by member:**")
+        st.markdown(
+            '<div style="font-size:0.75rem;color:#888;margin-bottom:10px">'
+            'Completion /10 · Effort /20 · Substance /35 · Engagement /15 · Synthesis /20 '
+            '— ✨ AI-evaluated'
+            '</div>',
+            unsafe_allow_html=True,
+        )
+
         for m in members:
-            sub = submissions.get(m, {})
-            wc  = sub.get("word_count", 0)
+            cs  = c_scores.get(m, {})
+            tot = cs.get("total", 0)
+            col = cs.get("colour", "#BDC3C7")
+            lbl = cs.get("label", "—")
+            you = " (you)" if m == member else ""
             sec_id = assignments.get(m, [1])[0]
             sec = get_section_by_id(sec_id)
 
-            bar_w = min(100, int(wc / 3))  # 300 words = full bar
-            bar_c = "#27AE60" if wc >= 150 else "#F39C12" if wc >= 40 else "#E74C3C"
+            # Component pips
+            comp_html = "".join([
+                f'<span style="font-size:0.72rem;background:#E8F0FE;color:#003C87;'
+                f'border-radius:4px;padding:1px 6px;margin-right:3px">'
+                f'{k}: {v}</span>'
+                for k, v in [
+                    ("C", cs.get("completion", 0)),
+                    ("E", cs.get("effort", 0)),
+                    ("Su", cs.get("substance", 0)),
+                    ("Eng", cs.get("engagement", 0)),
+                    ("Sy", cs.get("synthesis", 0)),
+                ]
+            ])
 
-            you = " **(you)**" if m == member else ""
             st.markdown(
-                f'<div style="margin-bottom:12px">'
-                f'<div style="display:flex;justify-content:space-between;margin-bottom:3px">'
-                f'<span style="font-weight:500">{m}{you}</span>'
-                f'<span style="font-size:0.8rem;color:#666">{sec["emoji"]} {sec["title"]} · {wc} words</span>'
+                f'<div style="margin-bottom:14px">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">'
+                f'<span style="font-weight:600;font-size:0.88rem">{m}{you}</span>'
+                f'<span style="font-weight:700;color:{col};font-size:0.9rem">{tot}/100 — {lbl}</span>'
                 f'</div>'
-                f'<div class="score-track">'
-                f'<div style="background:{bar_c};height:10px;border-radius:99px;width:{bar_w}%"></div>'
-                f'</div></div>',
+                f'<div style="font-size:0.75rem;color:#888;margin-bottom:4px">{sec["emoji"]} {sec["title"]} · {cs.get("word_count",0)} words (group median: {cs.get("median_wc",0)})</div>'
+                f'<div class="score-track" style="margin-bottom:4px">'
+                f'<div style="background:{col};width:{tot}%;height:8px;border-radius:99px"></div>'
+                f'</div>'
+                f'<div>{comp_html}</div>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
         st.markdown("</div>", unsafe_allow_html=True)
@@ -1604,6 +2090,199 @@ def page_done():
         st.metric("Integration Score", f"{score}/100")
     with col4:
         st.metric("Sections Covered", len(subs))
+
+    # ── AI content scoring (runs once; cached in session) ─────────────────────
+    code = st.session_state["group_code"]
+    all_synth_done = len(gd.get("synthesis_submissions", {})) >= len(members)
+    ai_already_scored = bool(gd.get("ai_content_scores"))
+
+    if all_synth_done and not ai_already_scored:
+        with st.spinner("✨ AI is evaluating submission quality — this takes ~20 seconds…"):
+            gd = _trigger_ai_content_scoring(code, gd)
+        st.rerun()
+
+    # ── Group-level contribution narrative ────────────────────────────────────
+    st.markdown("---")
+    c_scores  = _compute_contribution_scores(gd)
+    group_avg = round(sum(c_scores[m]["total"] for m in members) / max(len(members), 1))
+
+    scores_list    = [c_scores[m]["total"] for m in members]
+    engaged_count  = sum(1 for m in members if c_scores[m].get("engagement", 0) > 0)
+    heavy_reliance = (max(scores_list) - min(scores_list)) >= 35 if scores_list else False
+
+    if heavy_reliance:
+        reliance_msg = "⚠️ The group relied heavily on one or two members."
+    else:
+        reliance_msg = "Contribution was reasonably balanced across the group."
+
+    if engaged_count == len(members):
+        integration_msg = f"All {len(members)} members referenced other sections — great cross-section thinking!"
+    elif engaged_count == 0:
+        integration_msg = "No members referenced other sections in their analysis."
+    else:
+        integration_msg = f"{engaged_count} of {len(members)} members connected their section to others."
+
+    st.markdown(
+        f'<div style="background:#F0F4FF;border-left:3px solid #003C87;border-radius:6px;'
+        f'padding:12px 16px;margin-bottom:16px;font-size:0.88rem;line-height:1.7">'
+        f'<strong>📋 Group summary:</strong> Group average score: <strong>{group_avg}/100</strong>. '
+        f'{reliance_msg} {integration_msg}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── Personal contribution report card ─────────────────────────────────────
+    st.markdown("### 📊 Your Contribution Report")
+
+    my_score  = c_scores.get(member, {})
+
+    if my_score:
+        tot    = my_score["total"]
+        colour = my_score["colour"]
+        label  = my_score["label"]
+        ai_ok  = my_score.get("ai_scored", False)
+        ai_badge = (
+            '<span style="font-size:0.75rem;background:#E8F5E9;color:#27AE60;'
+            'border-radius:4px;padding:2px 8px;margin-left:8px">✨ AI-evaluated</span>'
+            if ai_ok else
+            '<span style="font-size:0.75rem;background:#FFF3E0;color:#E67E22;'
+            'border-radius:4px;padding:2px 8px;margin-left:8px">⏳ Provisional</span>'
+        )
+
+        # Hero score + pie chart side by side
+        col_hero, col_pie = st.columns([1, 1.2])
+
+        with col_hero:
+            st.markdown(
+                f'<div class="card" style="text-align:center;padding:28px 20px;height:100%">'
+                f'<div style="font-size:3.5rem;font-weight:800;color:{colour};line-height:1">{tot}</div>'
+                f'<div style="font-size:1.05rem;color:{colour};font-weight:600;margin-bottom:6px">/100 — {label}</div>'
+                f'{ai_badge}'
+                f'<div style="font-size:0.85rem;color:#888;margin-top:8px">Group average: {group_avg}/100</div>'
+                f'<div style="background:#E9ECEF;border-radius:99px;height:10px;margin:14px auto;max-width:260px;overflow:hidden">'
+                f'<div style="background:{colour};width:{tot}%;height:10px;border-radius:99px"></div>'
+                f'</div>'
+                f'<div style="font-size:0.78rem;color:#aaa;margin-top:4px">'
+                f'Completion /10 · Effort /20 · Substance /35<br>Engagement /15 · Synthesis /20'
+                f'</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+
+        with col_pie:
+            st.markdown('<div class="card" style="padding:16px">', unsafe_allow_html=True)
+            st.markdown(
+                '<div style="font-size:0.85rem;font-weight:600;color:#2C3E50;margin-bottom:6px">'
+                '📊 Score breakdown</div>',
+                unsafe_allow_html=True,
+            )
+            _render_score_donut(my_score)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # Component breakdown cards
+        st.markdown("<br>", unsafe_allow_html=True)
+        components = [
+            {
+                "name":    "Completion",
+                "max":     10,
+                "score":   my_score["completion"],
+                "icon":    "✅",
+                "detail":  my_score["on_time_label"],
+                "explain": "On time = 10 pts; after the individual submission deadline = 0 pts.",
+                "ai":      False,
+            },
+            {
+                "name":    "Effort",
+                "max":     20,
+                "score":   my_score["effort"],
+                "icon":    "✍️",
+                "detail":  my_score["effort_label"],
+                "explain": "Word count relative to group median. Rewards proportional contribution, not a fixed target.",
+                "ai":      False,
+            },
+            {
+                "name":    "Substance",
+                "max":     35,
+                "score":   my_score["substance"],
+                "icon":    "🔬",
+                "detail":  my_score["substance_label"],
+                "explain": (
+                    "AI evaluates whether your analysis is case-specific, structured, and insightful. "
+                    "Off-topic or repetitive content scores near zero regardless of word count."
+                ),
+                "ai":      ai_ok,
+            },
+            {
+                "name":    "Engagement",
+                "max":     15,
+                "score":   my_score["engagement"],
+                "icon":    "🔗",
+                "detail":  my_score["engagement_label"],
+                "explain": (
+                    "AI evaluates how well you connected your section to other parts of the case. "
+                    "Explicit cross-section links and integration earn full marks."
+                ),
+                "ai":      ai_ok,
+            },
+            {
+                "name":    "Synthesis",
+                "max":     20,
+                "score":   my_score["synthesis"],
+                "icon":    "🤝",
+                "detail":  my_score["synthesis_label"],
+                "explain": (
+                    "AI evaluates your synthesis contribution: does it integrate multiple sections "
+                    "with specific Alpes Bank context?"
+                ),
+                "ai":      ai_ok,
+            },
+        ]
+
+        cols = st.columns(2)
+        for i, comp in enumerate(components):
+            s      = comp["score"]
+            m_val  = comp["max"]
+            pct    = int(s / m_val * 100)
+            c      = "#27AE60" if pct >= 80 else "#F39C12" if pct >= 50 else "#E74C3C"
+            ai_pip = (
+                '<span style="font-size:0.68rem;background:#E8F5E9;color:#27AE60;'
+                'border-radius:3px;padding:1px 5px;margin-left:4px">✨ AI</span>'
+                if comp["ai"] else ""
+            )
+            with cols[i % 2]:
+                st.markdown(
+                    f'<div class="card" style="margin-bottom:12px;padding:18px 20px">'
+                    f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+                    f'<span style="font-size:1rem">{comp["icon"]} <strong>{comp["name"]}</strong>{ai_pip}</span>'
+                    f'<span style="font-weight:700;color:{c};font-size:1.1rem">{s}/{m_val}</span>'
+                    f'</div>'
+                    f'<div style="background:#E9ECEF;border-radius:99px;height:7px;margin-bottom:8px;overflow:hidden">'
+                    f'<div style="background:{c};width:{pct}%;height:7px;border-radius:99px"></div>'
+                    f'</div>'
+                    f'<div style="font-size:0.82rem;color:#444;margin-bottom:4px"><strong>{comp["detail"]}</strong></div>'
+                    f'<div style="font-size:0.78rem;color:#888;line-height:1.4">{comp["explain"]}</div>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
+
+        # All members overview
+        with st.expander("👥 See all members' scores"):
+            for m in members:
+                cs  = c_scores.get(m, {})
+                t   = cs.get("total", 0)
+                col = cs.get("colour", "#BDC3C7")
+                lbl = cs.get("label", "—")
+                you = " (you)" if m == member else ""
+                st.markdown(
+                    f'<div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">'
+                    f'<span style="font-weight:600;min-width:120px">{m}{you}</span>'
+                    f'<div style="flex:1;background:#E9ECEF;border-radius:99px;height:8px;overflow:hidden">'
+                    f'<div style="background:{col};width:{t}%;height:8px;border-radius:99px"></div>'
+                    f'</div>'
+                    f'<span style="font-weight:700;color:{col};min-width:70px;text-align:right">{t}/100 {lbl}</span>'
+                    f'</div>',
+                    unsafe_allow_html=True,
+                )
 
     st.markdown("---")
 

@@ -401,6 +401,137 @@ Rules:
             ),
         )
 
+    def score_contributions(
+        self,
+        group_data: dict,
+        section_titles: Dict[str, str],
+    ) -> dict:
+        """
+        AI-evaluates Substance (0-35), Engagement (0-15), and Synthesis (0-20)
+        for every member in group_data.
+
+        Parameters
+        ----------
+        group_data     : full group session dict
+        section_titles : {member_name: "Section Title string"}
+
+        Returns
+        -------
+        {member_name: {
+            "substance":           int,
+            "substance_feedback":  str,
+            "engagement":          int,
+            "engagement_feedback": str,
+            "synthesis":           int,
+            "synthesis_feedback":  str,
+        }}
+        """
+        members     = group_data.get("members", [])
+        submissions = group_data.get("submissions", {})
+        synth_subs  = group_data.get("synthesis_submissions", {})
+        results: Dict[str, dict] = {}
+
+        for member in members:
+            sub        = submissions.get(member, {})
+            synth      = synth_subs.get(member, {})
+            sub_text   = sub.get("text", "").strip()
+            synth_text = synth.get("text", "").strip() if synth else ""
+            sec_title  = section_titles.get(member, "Unknown section")
+
+            if not sub_text:
+                results[member] = {
+                    "substance":           0,
+                    "substance_feedback":  "No individual submission found.",
+                    "engagement":          0,
+                    "engagement_feedback": "No individual submission found.",
+                    "synthesis":           0,
+                    "synthesis_feedback":  "No synthesis contribution found.",
+                }
+                continue
+
+            synth_excerpt = synth_text[:800] if synth_text else "(No synthesis submitted)"
+
+            prompt = f"""You are an academic evaluator for a university business case study.
+The case is *Alpes Bank's Journey to Creating Value at Scale with Generative AI*.
+
+Relevant case themes: GenAI implementation strategy, vendor/partner selection & risk,
+governance frameworks (3C model: Capability, Compliance, Culture), organisational design
+for AI at scale, use case prioritisation, change management.
+
+---
+STUDENT: {member}
+SECTION ASSIGNED: {sec_title}
+
+INDIVIDUAL ANALYSIS:
+{sub_text[:1500]}
+
+SYNTHESIS CONTRIBUTION:
+{synth_excerpt}
+---
+
+Score the student on three dimensions and return ONLY valid JSON (no markdown fences):
+
+{{
+  "substance_score":      <integer 0-35>,
+  "substance_feedback":   "<one specific sentence explaining the score>",
+  "engagement_score":     <integer 0-15>,
+  "engagement_feedback":  "<one sentence on cross-section connections or lack thereof>",
+  "synthesis_score":      <integer 0-20>,
+  "synthesis_feedback":   "<one sentence on the synthesis contribution quality>"
+}}
+
+SCORING RUBRICS
+Substance (0-35):
+  0-5   Off-topic, generic business-school filler, repetitive padding, or no case specifics
+  6-15  Superficially relevant but thin — restates the case without real analysis
+  16-25 Relevant and structured; references specific Alpes Bank content
+  26-35 Deep, case-specific argumentation with original insight and clear logic
+
+Engagement (0-15):
+  0     No reference to other sections or cross-cutting case themes
+  1-5   Vague mention of related topics
+  6-10  At least one explicit cross-section link or named connection
+  11-15 Multiple explicit cross-section connections woven into the analysis
+
+Synthesis (0-20):
+  0     No synthesis, or completely off-topic
+  1-7   Brief or generic — does not integrate sections
+  8-14  Integrates at least two sections with moderate case specificity
+  15-20 Rich integration across sections, grounded in specific Alpes Bank context"""
+
+            raw = self._ai.chat(system=self.SYSTEM_PROMPT, user=prompt)
+
+            try:
+                clean = raw.strip()
+                # Strip accidental markdown fences
+                if clean.startswith("```"):
+                    clean = clean.split("```")[1]
+                    if clean.startswith("json"):
+                        clean = clean[4:]
+                data = json.loads(clean.strip())
+                results[member] = {
+                    "substance":           max(0, min(35, int(data.get("substance_score", 5)))),
+                    "substance_feedback":  str(data.get("substance_feedback", "")),
+                    "engagement":          max(0, min(15, int(data.get("engagement_score", 0)))),
+                    "engagement_feedback": str(data.get("engagement_feedback", "")),
+                    "synthesis":           max(0, min(20, int(data.get("synthesis_score", 0)))),
+                    "synthesis_feedback":  str(data.get("synthesis_feedback", "")),
+                }
+            except Exception as exc:
+                logger.warning(
+                    f"Could not parse contribution JSON for {member}: {raw[:300]} — {exc}"
+                )
+                results[member] = {
+                    "substance":           10,
+                    "substance_feedback":  "AI scoring temporarily unavailable — using provisional score.",
+                    "engagement":          5,
+                    "engagement_feedback": "AI scoring temporarily unavailable — using provisional score.",
+                    "synthesis":           10,
+                    "synthesis_feedback":  "AI scoring temporarily unavailable — using provisional score.",
+                }
+
+        return results
+
     # ── Private helpers ─────────────────────────────────────────────────────
 
     def _build_free_rider_group_message(
