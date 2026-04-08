@@ -1,0 +1,46 @@
+# -- Secrets & credentials
+.env
+*.env
+.env.*
+!.env.example
+
+# -- Session data (runtime group files, not source code)
+sessions/
+*.json
+!config.json
+
+# -- Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# -- Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# -- Streamlit
+.streamlit/secrets.toml
+
+# -- Logs
+*.log
+logs/
+
+# -- OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# -- IDEs
+.vscode/
+.idea/
+*.suo
+*.user
+
+# -- Packaging
+dist/
+build/
+*.egg-info/
