@@ -4,6 +4,13 @@ A group-based, AI-scaffolded business case study platform built on the
 MAS prototype architecture. Developed as part of the *Data-Driven Service
 Design & Management* course at the University of St. Gallen (HSG).
 
+Each student opens the app in their own browser tab, enters their name
+and a group code, and works through their assigned case section. The
+Group Alignment Agent provides real-time feedback on contribution balance
+(free-rider detection) and argument coherence (fragmentation detection).
+Session data is stored as JSON files in `sessions/` so all group members
+share the same state.
+
 ---
 
 ## What it does
@@ -17,6 +24,7 @@ Design & Management* course at the University of St. Gallen (HSG).
 | **Full case access** | Both the reading page and the writing page offer a collapsed full-case accordion so students can read beyond their own section without losing their draft |
 | **Free-rider detection** | Flags missing or low-effort contributions; non-accusatory group nudges |
 | **Fragmentation analysis** | Detects argument gaps & contradictions across submissions; scores group coherence 0–100 |
+| **Contribution scoring** | Per-member score 0–100 across Completion /10, Effort /20, Substance /35, Engagement /15, Synthesis /20 — AI-evaluated once all synthesis submissions are in |
 | **Synthesis round** | Guides the group toward one integrated argument with a coaching note from the Group Alignment Agent |
 | **Group chat** | WhatsApp-style chat panel in the sidebar, available on every page; messages auto-refresh every 8 s; unread badge alerts members to new messages |
 
@@ -59,7 +67,7 @@ Group Alignment  ←── free-rider panel + coherence score + scaffold questio
 Synthesis  ←── each member contributes to one integrated answer
     │
     ▼
-Done  ←── stats, all synthesis contributions, alignment report
+Done  ←── stats, contribution report card, score donut, all synthesis contributions
 ```
 
 > 💬 **Group chat** is available in the sidebar on *every* page after login —
@@ -68,11 +76,25 @@ Done  ←── stats, all synthesis contributions, alignment report
 
 ---
 
+## Contribution score breakdown
+
+| Component | Max | How it's measured |
+|-----------|-----|-------------------|
+| **Completion** | 10 | Submitted on or before the individual submission deadline = 10; after = 0; no deadline set = 7 |
+| **Effort** | 20 | Word count relative to the group median; penalises outliers below 25 % of median |
+| **Substance** | 35 | AI-evaluated: case-specificity, structure, depth; structural heuristic used until AI scoring runs |
+| **Engagement** | 15 | AI-evaluated: cross-section references and integration; structural fallback counts explicit §-references |
+| **Synthesis** | 20 | AI-evaluated: quality of synthesis contribution; structural fallback on word count + vocabulary variety |
+| **Total** | 100 | |
+
+AI scoring runs once — after all synthesis submissions are in — and the results are cached in the session file.
+
+---
+
 ## Quick start
 
 ### 1. Install dependencies
 ```bash
-cd case_study_tutor
 pip install -r requirements.txt
 ```
 
@@ -93,8 +115,8 @@ Opens at `http://localhost:8501`.
 
 ## Running a group session
 
-1. **Creator** opens the app → *Create a new group* → enters name, group size, and
-   selects 2–4 interest tags → receives a **6-character group code**.
+1. **Creator** opens the app → *Create a new group* → enters name, group size, interest
+   tags, and optional deadlines → receives a **6-character group code**.
 2. **Other members** open the same URL → *Join existing group* → enter name, group
    code, and their own interest tags.
 3. Everyone waits in the **lobby** until the group is full — the lobby shows who
@@ -110,11 +132,27 @@ Opens at `http://localhost:8501`.
 8. Once all members have submitted, the Group Alignment Agent runs automatically.
 9. The group reviews the alignment report, discusses the scaffold questions, then
    each member writes their synthesis contribution.
+10. The **Done** page shows each member's contribution report card with a score
+    donut, component breakdown, and the full group synthesis.
 
 > **Group chat** is always available in the sidebar. Use it to flag connections
 > between sections, agree on shared framing, or nudge a quiet group member —
 > all without leaving your current page. Messages auto-refresh every 8 s and
 > an unread badge (🔴) alerts you when something new arrives.
+
+---
+
+## Deadlines
+
+When creating a group the organiser can optionally set two dates:
+
+| Deadline | Purpose |
+|----------|---------|
+| **Individual submission** | Members who submit on or before this date earn full Completion points (10/10); submitting after scores 0 |
+| **Final submission** | Target date for the group synthesis round |
+
+The individual submission deadline cannot be set after the final submission deadline.
+Both dates are shown in the sidebar with a warning flag (⚠️) once they have passed.
 
 ---
 
@@ -158,29 +196,51 @@ to round-robin when preferences are empty or tied.
 ## File structure
 
 ```
-case_study_tutor/
-├── app.py                         # Main Streamlit application (~1 300 lines)
-│                                  #   page_lobby()     — waiting room
-│                                  #   page_reading()   — case + full-case accordion
-│                                  #   page_working()   — 3-tab writing page
-│                                  #   page_alignment() — free-rider + coherence
-│                                  #   page_synthesis() — integrated answer round
-│                                  #   page_done()      — summary screen
-├── case_content.py                # All case content and matching logic
-│   ├── SECTIONS                   # 5 case sections (text, questions, buzz_word_slugs)
-│   ├── BUZZ_WORDS                 # 12 interest tags with emoji + slug
-│   ├── SECTION_CONNECTIONS        # 20 directed bridge pairs (i→j) with questions
-│   ├── EXPERT_ANSWERS             # Teaching Note summaries (agents only, never shown)
-│   ├── GROUP_SYNTHESIS_QUESTIONS  # 5 overarching synthesis questions
-│   ├── assign_sections_by_preferences()   # Greedy preference-matching algorithm
-│   └── assign_sections_to_members()       # Legacy round-robin fallback
-├── config.json                    # AI model configuration
-├── requirements.txt               # includes streamlit-autorefresh for chat polling
-├── .env.example                   # API key template
-├── agents/
-│   ├── __init__.py
-│   └── group_alignment_agent.py   # Free-rider + fragmentation agent
-└── sessions/                      # Auto-created; one JSON file per group code
+Remote_Data_Driven/
+├── app.py                    # Entry point — page config, global CSS, and page router
+│
+├── core/                     # Domain logic: the "brain" of the app
+│   ├── workflow.py           # Group lifecycle, scoring, AI agent calls
+│   └── case_content.py       # All case material, interest tags, section connections
+│
+├── database/                 # Data persistence layer
+│   └── storage.py            # Read/write group session JSON files — nothing else touches disk
+│
+├── components/               # Reusable UI building blocks (rendered inside pages)
+│   └── sidebar.py            # Sidebar panel, step indicator, contribution score donut
+│
+├── pages/                    # One file per screen — imports from core/ and components/
+│   ├── welcome.py            # Create / join group + interest-tag selection
+│   ├── lobby.py              # Waiting room until the full group has joined
+│   ├── reading.py            # Case reading + full-case accordion
+│   ├── working.py            # 3-tab writing page + cross-section connection prompts
+│   ├── alignment.py          # Free-rider panel + coherence score + scaffold questions
+│   ├── synthesis.py          # Integrated group answer round
+│   └── done.py               # Summary, individual contribution report, score donut
+│
+├── agents/                   # AI agents (free-rider detection, fragmentation, scoring)
+│   └── group_alignment_agent.py
+│
+├── sessions/                 # Auto-created at runtime; one JSON file per group code
+├── config.json               # AI model/provider configuration
+├── requirements.txt
+└── .env.example              # API key template
+```
+
+### Module dependency flow
+
+```
+app.py
+  └── pages/*.py
+        ├── core/workflow.py
+        │     ├── database/storage.py
+        │     ├── core/case_content.py
+        │     └── agents/group_alignment_agent.py
+        ├── core/case_content.py
+        ├── database/storage.py
+        └── components/sidebar.py
+              ├── core/workflow.py
+              └── core/case_content.py
 ```
 
 ---
