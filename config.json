@@ -1,0 +1,21 @@
+{
+  "ai_manager": {
+    "client": "groq",
+    "primary_model": "llama-3.3-70b-versatile",
+    "fallback_model": "llama-3.1-8b-instant",
+    "max_tokens": 700,
+    "temperature": 0.5,
+    "max_retries": 3
+  },
+  "session": {
+    "max_rounds": 5,
+    "require_reflection": true,
+    "min_words_per_submission": 40,
+    "free_rider_word_threshold": 40
+  },
+  "case": {
+    "title": "Alpes Bank: Creating Value at Scale with Generative AI",
+    "source": "HSG Teaching Case (Harvard Business Case format)",
+    "num_sections": 5
+  }
+}
