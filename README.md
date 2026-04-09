@@ -1,8 +1,6 @@
 # Case Study Tutor — Alpes Bank GenAI
 
-A group-based, AI-scaffolded business case study platform built on the
-MAS prototype architecture. Developed as part of the *Data-Driven Service
-Design & Management* course at the University of St. Gallen (HSG).
+A group-based, AI-scaffolded business case study platform
 
 Each student opens the app in their own browser tab, enters their name
 and a group code, and works through their assigned case section. The
@@ -11,22 +9,23 @@ Group Alignment Agent provides real-time feedback on contribution balance
 Session data is stored as JSON files in `sessions/` so all group members
 share the same state.
 
+Opens at `https://datadrivenservicedesignandmgmt-8q6xympjjf9tknu9xcrqww.streamlit.app/`
 ---
 
 ## What it does
 
 | Feature | Description |
 |---------|-------------|
-| **Interest-based section matching** | Students pick 2–4 buzz-word interest tags; a greedy matching algorithm assigns each member the section with the most overlap — no two people get the same section |
+| **Interest-based section matching** | Students pick 2–4 interest tags; a greedy matching algo. assigns each member the section(s) with the most overlap — no two people get the same |
 | **Group lobby gate** | Sections are revealed only once the full group has joined; no one can start reading early |
-| **Individual AI feedback** | Scaffolded hints after each submission (no spoilers; Teaching Note used only by agents) |
-| **Cross-section connection prompts** | Every student sees directed bridge questions between their section and each colleague's — forward ("your section feeds into §X") and backward ("§X feeds into yours") |
+| **Individual AI feedback** | Scaffolded hints after each submission |
+| **Cross-section connection prompts** | Every student sees directed bridge questions between their section and each colleague's — ("your section feeds into §X") and ("§X feeds into yours") |
 | **Full case access** | Both the reading page and the writing page offer a collapsed full-case accordion so students can read beyond their own section without losing their draft |
 | **Free-rider detection** | Flags missing or low-effort contributions; non-accusatory group nudges |
 | **Fragmentation analysis** | Detects argument gaps & contradictions across submissions; scores group coherence 0–100 |
 | **Contribution scoring** | Per-member score 0–100 across Completion /10, Effort /20, Substance /35, Engagement /15, Synthesis /20 — AI-evaluated once all synthesis submissions are in |
 | **Synthesis round** | Guides the group toward one integrated argument with a coaching note from the Group Alignment Agent |
-| **Group chat** | WhatsApp-style chat panel in the sidebar, available on every page; messages auto-refresh every 8 s; unread badge alerts members to new messages |
+| **Group chat** | WhatsApp-style chat panel in the sidebar, available on every page; messages auto-refresh every 8s; unread badge alerts members to new messages |
 
 ---
 
@@ -109,7 +108,7 @@ cp .env.example .env
 streamlit run app.py
 ```
 
-Opens at `https://datadrivenservicedesignandmgmt-8q6xympjjf9tknu9xcrqww.streamlit.app/`.
+Opens at `https://datadrivenservicedesignandmgmt-8q6xympjjf9tknu9xcrqww.streamlit.app/`
 
 ---
 
