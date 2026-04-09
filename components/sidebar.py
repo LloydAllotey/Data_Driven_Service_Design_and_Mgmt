@@ -74,7 +74,7 @@ def _render_score_donut(my_score: dict) -> None:
             values=values,
             hole=0.62,
             marker=dict(colors=colours, line=dict(color="#ffffff", width=2)),
-            textinfo="label+value",
+            textinfo="none",
             hovertemplate="%{label}: %{value} pts<extra></extra>",
             sort=False,
         )])
@@ -86,9 +86,9 @@ def _render_score_donut(my_score: dict) -> None:
                 showarrow=False,
             )],
             showlegend=True,
-            legend=dict(orientation="h", yanchor="bottom", y=-0.28, xanchor="center", x=0.5),
-            margin=dict(l=10, r=10, t=10, b=40),
-            height=320,
+            legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02),
+            margin=dict(l=10, r=120, t=10, b=10),
+            height=280,
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
         )
