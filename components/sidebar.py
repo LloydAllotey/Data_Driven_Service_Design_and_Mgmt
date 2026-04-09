@@ -14,11 +14,6 @@ try:
 except ImportError:
     _AUTOREFRESH_AVAILABLE = False
 
-try:
-    import plotly.graph_objects as go
-    _PLOTLY_AVAILABLE = True
-except ImportError:
-    _PLOTLY_AVAILABLE = False
 
 from core.workflow import _compute_contribution_scores, _post_message
 from core.case_content import get_section_by_id
@@ -64,39 +59,7 @@ def _render_score_donut(my_score: dict) -> None:
     missed = max(0, 100 - total)
     colour = my_score.get("colour", "#2C3E50")
 
-    if _PLOTLY_AVAILABLE:
-        labels  = [c[0] for c in components] + ["Missed"]
-        values  = [c[1] for c in components] + [missed]
-        colours = [c[2] for c in components] + ["#ECEFF1"]
-
-        fig = go.Figure(data=[go.Pie(
-            labels=labels,
-            values=values,
-            hole=0.62,
-            marker=dict(colors=colours, line=dict(color="#ffffff", width=2)),
-            textinfo="none",
-            hovertemplate="%{label}: %{value} pts<extra></extra>",
-            sort=False,
-        )])
-        fig.update_layout(
-            annotations=[dict(
-                text=f"<b>{total}</b><br>/100",
-                x=0.5, y=0.5,
-                font=dict(size=20, color=colour),
-                showarrow=False,
-            )],
-            showlegend=True,
-            legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5,
-                        font=dict(size=11), itemsizing="constant"),
-            margin=dict(l=10, r=10, t=10, b=80),
-            height=300,
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-        )
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        return
-
-    # CSS conic-gradient fallback
+    # CSS conic-gradient donut
     stops = []
     cursor = 0
     for _, val, col in components:
