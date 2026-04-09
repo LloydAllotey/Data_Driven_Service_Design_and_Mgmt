@@ -51,12 +51,10 @@ html, body, [class*="css"] {
 div[data-baseweb="form-control-label"] {
     color: #2C3E50 !important;
 }
-[data-testid="stMarkdownContainer"] p,
-[data-testid="stMarkdownContainer"] li,
-[data-testid="stMarkdownContainer"] span,
-[data-testid="stMarkdownContainer"] strong,
-.stMarkdown p, .stMarkdown li, .stMarkdown span {
-    color: #2C3E50 !important;
+[data-testid="stMarkdownContainer"] > div > p,
+[data-testid="stMarkdownContainer"] > div > ul > li,
+.stMarkdown > div > p {
+    color: #2C3E50;
 }
 [data-testid="stCaptionContainer"] p { color: #6C757D !important; }
 [data-testid="stTabs"] button[role="tab"] { color: #2C3E50 !important; }

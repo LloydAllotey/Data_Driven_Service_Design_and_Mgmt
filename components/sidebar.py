@@ -86,9 +86,10 @@ def _render_score_donut(my_score: dict) -> None:
                 showarrow=False,
             )],
             showlegend=True,
-            legend=dict(orientation="v", yanchor="middle", y=0.5, xanchor="left", x=1.02),
-            margin=dict(l=10, r=120, t=10, b=10),
-            height=280,
+            legend=dict(orientation="h", yanchor="top", y=-0.05, xanchor="center", x=0.5,
+                        font=dict(size=11), itemsizing="constant"),
+            margin=dict(l=10, r=10, t=10, b=80),
+            height=300,
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
         )
