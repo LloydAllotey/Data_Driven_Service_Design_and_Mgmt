@@ -100,7 +100,7 @@ pip install -r requirements.txt
 ### 2. Set up your API key
 ```bash
 cp .env.example .env
-# Edit .env and add your GROQ_API_KEY (free at console.groq.com)
+# Edit .env and add your GROQ_API_KEY (free at console.groq.com) to use it locally, or use the link from the beginning 
 ```
 
 ### 3. Run the app
@@ -122,8 +122,7 @@ Opens at `https://datadrivenservicedesignandmgmt-8q6xympjjf9tknu9xcrqww.streamli
    has joined and their interest tags.
 4. Once the last member joins, sections are assigned by preference match and
    everyone is forwarded to the reading page automatically.
-5. Students read their section (and optionally browse the full case), then move
-   to the writing page.
+5. Students read their section and browse the full case, then move to the writing page.
 6. On the writing page, the **🔗 Cross-section connections** expander shows
    directed bridge questions for every other section. Students should reference
    at least one other section in their submission.
