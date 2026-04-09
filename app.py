@@ -53,8 +53,12 @@ div[data-baseweb="form-control-label"] {
 }
 [data-testid="stMarkdownContainer"] > div > p,
 [data-testid="stMarkdownContainer"] > div > ul > li,
-.stMarkdown > div > p {
-    color: #2C3E50;
+.stMarkdown > div > p,
+[data-testid="stMetricLabel"],
+[data-testid="stMetricLabel"] p,
+[data-testid="stMetricValue"],
+[data-testid="stMetricValue"] div {
+    color: #000000 !important;
 }
 [data-testid="stCaptionContainer"] p { color: #6C757D !important; }
 [data-testid="stTabs"] button[role="tab"] { color: #2C3E50 !important; }
