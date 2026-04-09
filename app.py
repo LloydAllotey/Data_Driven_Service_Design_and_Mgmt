@@ -144,8 +144,8 @@ div[data-baseweb="form-control-label"] {
 .dot-orange { background: #F39C12; }
 .dot-red    { background: #E74C3C; }
 .dot-grey   { background: #BDC3C7; }
-.member-name { font-weight: 500; font-size: 0.9rem; flex: 1; }
-.word-count  { font-size: 0.78rem; color: #6C757D; }
+.member-name { font-weight: 500; font-size: 0.9rem; flex: 1; color: #000000 !important; }
+.word-count  { font-size: 0.78rem; color: #000000 !important; }
 
 /* ── Integration score bar ── */
 .score-track {
