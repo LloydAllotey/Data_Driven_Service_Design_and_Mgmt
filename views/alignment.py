@@ -10,7 +10,7 @@ import streamlit as st
 from core.case_content import get_section_by_id
 from database.storage import _load_session, _save_session
 from components.sidebar import _render_sidebar, _render_step_indicator
-from core.workflow import _all_submitted, _compute_contribution_scores, _get_agent
+from core.workflow import _all_submitted, _compute_contribution_scores, _get_agent, _trigger_ai_content_scoring
 
 
 def page_alignment():
@@ -53,7 +53,22 @@ def page_alignment():
             agent = _get_agent()
             if agent:
                 try:
-                    fr_report = agent.check_free_riders(gd)
+                    # Use our contribution scoring system for free-rider detection
+                    c_scores_init = _compute_contribution_scores(gd)
+                    scores_list   = [c_scores_init[m]["total"] for m in members]
+                    low_effort    = [m for m in members if c_scores_init[m].get("effort", 0) < 10]
+                    missing       = [m for m in members if m not in submissions]
+                    has_issue     = bool(missing or low_effort)
+
+                    if has_issue:
+                        parts = []
+                        if missing:
+                            parts.append(f"{', '.join(missing)} has not submitted yet.")
+                        if low_effort:
+                            parts.append(f"{', '.join(low_effort)} submitted but with low effort relative to the group median.")
+                        group_message = " ".join(parts) + " Consider discussing contribution balance before moving to synthesis."
+                    else:
+                        group_message = ""
 
                     sub_texts  = {m: submissions[m]["text"] for m in submissions}
                     sec_titles = {
@@ -66,10 +81,10 @@ def page_alignment():
                     report = {
                         "timestamp": datetime.now().isoformat(),
                         "free_rider": {
-                            "has_issue":     fr_report.has_issue,
-                            "missing":       fr_report.missing_members,
-                            "low_effort":    fr_report.low_effort_members,
-                            "group_message": fr_report.group_message,
+                            "has_issue":     has_issue,
+                            "missing":       missing,
+                            "low_effort":    low_effort,
+                            "group_message": group_message,
                         },
                         "fragmentation": {
                             "score":               frag_report.integration_score,
