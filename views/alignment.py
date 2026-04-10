@@ -3,12 +3,14 @@ views/alignment.py — Group alignment report page.
 """
 from __future__ import annotations
 
+import html
 from datetime import datetime
 
 import streamlit as st
 
 from core.case_content import get_section_by_id
 from database.storage import _load_session, _save_session
+from components.peer_comments import render_peer_comments_block
 from components.sidebar import _render_sidebar, _render_step_indicator
 from core.workflow import _all_submitted, _compute_contribution_scores, _get_agent, _trigger_ai_content_scoring
 
@@ -276,20 +278,33 @@ def page_alignment():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # All submissions viewer
-    with st.expander("📄 Read all group submissions"):
+    # All submissions viewer + peer comments (primary place to finish peer review once everyone has submitted)
+    code = st.session_state["group_code"]
+    with st.expander("📄 Group analyses & peer comments", expanded=True):
+        st.caption(
+            "Leave constructive comments on colleagues' first-phase drafts before moving to synthesis."
+        )
         for m in members:
             sub    = submissions.get(m, {})
             sec_id = assignments.get(m, [1])[0]
             sec    = get_section_by_id(sec_id)
+            raw    = sub.get("text", "(no submission)")
+            body   = html.escape(str(raw)).replace("\n", "<br/>")
             st.markdown(
                 f'<div class="card" style="margin-bottom:12px">'
                 f'<div class="section-pill">{sec["emoji"]} Section {sec_id}: {sec["title"]}</div>'
-                f'<div style="font-weight:600;margin-bottom:8px">{m}</div>'
+                f'<div style="font-weight:600;margin-bottom:8px">{html.escape(m)}</div>'
                 f'<div style="font-size:0.92rem;line-height:1.7;color:#333">'
-                f'{sub.get("text","(no submission)")}'
-                f'</div></div>',
+                f"{body}"
+                f"</div></div>",
                 unsafe_allow_html=True,
+            )
+            st.markdown(
+                '<p style="font-size:0.78rem;color:#888;margin:0 0 6px">Peer comments</p>',
+                unsafe_allow_html=True,
+            )
+            render_peer_comments_block(
+                gd, code, member, m, show_composer=(member != m),
             )
 
     st.markdown("---")
