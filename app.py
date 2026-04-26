@@ -313,6 +313,7 @@ from views.working   import page_working    # noqa: E402
 from views.alignment import page_alignment  # noqa: E402
 from views.synthesis import page_synthesis  # noqa: E402
 from views.summary   import page_summary    # noqa: E402
+from views.feedback  import page_feedback   # noqa: E402
 from database.storage import _load_session   # noqa: E402
 from core.workflow    import _all_submitted  # noqa: E402
 
@@ -349,6 +350,7 @@ def main():
         "alignment": page_alignment,
         "synthesis": page_synthesis,
         "done":      page_summary,
+        "feedback":  page_feedback,
     }
 
     routes.get(page, page_welcome)()

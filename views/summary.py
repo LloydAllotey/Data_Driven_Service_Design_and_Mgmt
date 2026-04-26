@@ -262,7 +262,32 @@ def page_summary():
                 st.markdown(f"- {q}")
 
     st.markdown("---")
-    if st.button("↩ Start a new session", use_container_width=False):
-        for key in ["member", "group_code", "page"]:
-            st.session_state.pop(key, None)
-        st.rerun()
+
+    # ── Feedback CTA ──────────────────────────────────────────────────────────
+    member      = st.session_state.get("member", "")
+    fb_done     = bool(gd.get("feedback_responses", {}).get(member))
+    fb_label    = "✅ Feedback submitted — thank you!" if fb_done else "📝 Give feedback to improve the AI →"
+    fb_help     = "You've already submitted your feedback." if fb_done else (
+        "Takes 3–4 minutes. Your responses help us improve the AI scaffolding for future students."
+    )
+
+    st.markdown(
+        '<div style="background:#F0F4FF;border-left:3px solid #003C87;border-radius:6px;'
+        'padding:14px 18px;margin-bottom:16px;font-size:0.88rem;line-height:1.6">'
+        '<strong>🤖 Help improve the AI agent</strong><br>'
+        'Before you go, please take 3–4 minutes to rate the AI scaffolding experience. '
+        'Your feedback directly shapes how the agent evolves in future sessions.'
+        '</div>',
+        unsafe_allow_html=True,
+    )
+
+    col_fb, col_new = st.columns([1.4, 1])
+    with col_fb:
+        if st.button(fb_label, type="primary", use_container_width=True, disabled=fb_done, help=fb_help):
+            st.session_state["page"] = "feedback"
+            st.rerun()
+    with col_new:
+        if st.button("↩ Start a new session", use_container_width=True):
+            for key in ["member", "group_code", "page"]:
+                st.session_state.pop(key, None)
+            st.rerun()
