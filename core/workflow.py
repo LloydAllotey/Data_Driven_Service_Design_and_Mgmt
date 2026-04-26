@@ -80,6 +80,7 @@ def _create_group(
         "feedback": {},
         "alignment_reports": [],
         "synthesis_submissions": {},
+        "submission_peer_comments": {},
         "phase": "lobby",
     }
     if group_size == 1:
@@ -394,6 +395,45 @@ def _post_message(code: str, member: str, text: str) -> None:
     })
     data["chat"] = data["chat"][-200:]
     _save_session(data)
+
+
+def _post_submission_peer_comment(
+    code: str, author: str, target_member: str, text: str
+) -> tuple[bool, str]:
+    """
+    Append a peer comment on another member's individual submission.
+
+    Returns (success, error_message).
+    """
+    body = (text or "").strip()
+    if not body:
+        return False, "Comment cannot be empty."
+    if len(body) > 4000:
+        return False, "Comment is too long (max 4000 characters)."
+    if author == target_member:
+        return False, "You cannot comment on your own submission."
+
+    data = _load_session(code)
+    if data is None:
+        return False, "Session not found."
+    subs = data.get("submissions", {})
+    if author not in subs:
+        return False, "Submit your own analysis before commenting on others."
+    if target_member not in subs:
+        return False, "This member has not submitted yet."
+
+    bucket = data.setdefault("submission_peer_comments", {})
+    lst = bucket.setdefault(target_member, [])
+    now = datetime.now()
+    lst.append({
+        "author": author,
+        "text": body,
+        "ts": now.strftime("%H:%M"),
+        "at": now.isoformat(),
+    })
+    bucket[target_member] = lst[-100:]
+    _save_session(data)
+    return True, ""
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

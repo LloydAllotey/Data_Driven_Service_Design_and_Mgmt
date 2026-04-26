@@ -7,6 +7,7 @@ import streamlit as st
 
 from core.case_content import GROUP_SYNTHESIS_QUESTIONS, get_section_by_id
 from database.storage import _load_session, _save_session
+from components.peer_comments import render_peer_comments_block
 from components.sidebar import _render_sidebar, _render_step_indicator
 from core.workflow import _get_agent, _submit_synthesis
 
@@ -62,6 +63,20 @@ def page_synthesis():
             unsafe_allow_html=True,
         )
 
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    code = st.session_state["group_code"]
+    st.markdown('<div class="card">', unsafe_allow_html=True)
+    st.markdown("#### 💬 Peer comments on your first-phase analysis")
+    st.markdown(
+        '<div style="font-size:0.88rem;color:#555;margin-bottom:10px">'
+        "Before you write your synthesis, review what colleagues wrote about your individual draft. "
+        "Use the sidebar group chat if you want to follow up.</div>",
+        unsafe_allow_html=True,
+    )
+    render_peer_comments_block(
+        gd, code, member, member, show_composer=False,
+    )
     st.markdown("</div>", unsafe_allow_html=True)
 
     my_synth = gd.get("synthesis_submissions", {}).get(member)

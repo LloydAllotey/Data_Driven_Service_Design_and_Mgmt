@@ -3,10 +3,13 @@ views/working.py — Individual analysis writing page.
 """
 from __future__ import annotations
 
+import html
+
 import streamlit as st
 
 from core.case_content import EXPERT_ANSWERS, SECTION_CONNECTIONS, SECTIONS, get_section_by_id
 from database.storage import _load_session, _save_session
+from components.peer_comments import render_peer_comments_block
 from components.sidebar import _render_sidebar, _render_step_indicator
 from core.workflow import _get_agent, _member_sections, _submit_answer
 
@@ -289,5 +292,49 @@ def page_working():
                 if st.button("Go to Group Alignment →", type="primary", use_container_width=True):
                     st.session_state["page"] = "alignment"
                     st.rerun()
+
+            st.markdown("</div>", unsafe_allow_html=True)
+
+        # Peer review: full width below the write / feedback columns
+        if my_sub and len(gd.get("members", [])) > 1:
+            code    = st.session_state["group_code"]
+            members = gd.get("members", [])
+            subs    = gd.get("submissions", {})
+            assigns = gd.get("section_assignments", {})
+
+            st.markdown("---")
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown("#### 💬 Peer review — colleagues' first drafts")
+            st.markdown(
+                '<div style="font-size:0.88rem;color:#555;margin-bottom:12px">'
+                "After you have reviewed your submission and AI feedback, read others' analyses "
+                "and leave constructive comments. You will see comments on <strong>your</strong> draft "
+                "again at the top of the <strong>Group Synthesis</strong> page before round two.</div>",
+                unsafe_allow_html=True,
+            )
+
+            for i, om in enumerate(m for m in members if m != member):
+                if i > 0:
+                    st.divider()
+                sub = subs.get(om)
+                if not sub:
+                    st.markdown(f"**{om}** — still drafting.")
+                    continue
+                sec_id = assigns.get(om, [1])[0]
+                sec    = get_section_by_id(sec_id)
+                st.markdown(f"##### {sec['emoji']} {om} — {sec['title']}")
+                body = html.escape(sub.get("text", "")).replace("\n", "<br/>")
+                st.markdown(
+                    f'<div style="background:#F8F9FA;border-radius:10px;padding:14px;'
+                    f'font-size:0.92rem;line-height:1.7;color:#333;margin-bottom:6px">{body}</div>',
+                    unsafe_allow_html=True,
+                )
+                st.markdown(
+                    '<p style="font-size:0.78rem;color:#888;margin:0 0 6px">Peer comments</p>',
+                    unsafe_allow_html=True,
+                )
+                render_peer_comments_block(
+                    gd, code, member, om, show_composer=True,
+                )
 
             st.markdown("</div>", unsafe_allow_html=True)
