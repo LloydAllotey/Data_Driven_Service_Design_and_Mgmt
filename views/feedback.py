@@ -27,17 +27,18 @@ FEEDBACK_DIR.mkdir(exist_ok=True)
 
 # ── Scale definitions ─────────────────────────────────────────────────────────
 
-_LIKERT_9 = [
-    "1 — Strongly disagree",
-    "2",
-    "3",
-    "4",
-    "5 — Neutral",
-    "6",
-    "7",
-    "8",
-    "9 — Strongly agree",
-]
+# Single-digit labels so all 9 columns are equal width (no skewed layout).
+# Anchors are shown separately as a legend above each item.
+_LIKERT_9 = ["1", "2", "3", "4", "5", "6", "7", "8", "9"]
+
+_LIKERT_LEGEND = (
+    '<div style="display:flex;justify-content:space-between;'
+    'font-size:0.75rem;color:#555;margin:-6px 0 10px;padding:0 4px">'
+    '<span>1 — Strongly disagree</span>'
+    '<span>5 — Neutral</span>'
+    '<span>9 — Strongly agree</span>'
+    '</div>'
+)
 
 _OVERALL_OPTIONS = [
     "1 — Poor",
@@ -153,23 +154,60 @@ LEARNING_OUTCOME_ITEMS = [
     },
 ]
 
-_ATTENTION_ITEM = {
-    "code":      "AC1",
-    "construct": "Attention_Check",
-    "statement": "To confirm you are reading carefully, please select the number 5.",
+# Two attention checks — rendered as plain Likert items, no special styling.
+# AC1 is inserted at index 3 in Section A (after AS1, AS2, AS3).
+# AC2 is inserted at index 1 in Section C (after LO1).
+_ATTENTION_ITEM_1 = {
+    "code":           "AC1",
+    "construct":      "Attention_Check",
+    "correct_value":  5,
+    "statement":      "For this item, please select the number 5.",
 }
+_ATTENTION_ITEM_2 = {
+    "code":           "AC2",
+    "construct":      "Attention_Check",
+    "correct_value":  9,
+    "statement":      "For this item, please select the number 9.",
+}
+
+# Build Section A and C item sequences with attention checks spliced in
+_AS_ITEMS_ORDERED = (
+    AI_SCAFFOLDING_ITEMS[:3]
+    + [_ATTENTION_ITEM_1]
+    + AI_SCAFFOLDING_ITEMS[3:]
+)
+_LO_ITEMS_ORDERED = (
+    LEARNING_OUTCOME_ITEMS[:1]
+    + [_ATTENTION_ITEM_2]
+    + LEARNING_OUTCOME_ITEMS[1:]
+)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _likert_value(label: str | None) -> int | None:
-    """Convert '5 — Neutral' → 5."""
+    """Convert '5' or '5 — Neutral' → 5."""
     if label is None:
         return None
     try:
         return int(label.split("—")[0].strip().split()[0])
     except (ValueError, IndexError):
         return None
+
+
+def _likert_radio(statement: str, key: str) -> str | None:
+    """Render a plain Likert item (statement + evenly-spaced 1-9 radio)."""
+    st.markdown(f"**{statement}**")
+    val = st.radio(
+        statement,
+        options=_LIKERT_9,
+        index=None,
+        key=key,
+        label_visibility="collapsed",
+        horizontal=True,
+    )
+    st.markdown("")
+    return val
 
 
 def _mean(values: list[int | None]) -> float | None:
@@ -187,33 +225,29 @@ def _item_record(item: dict, raw_label: str | None) -> dict:
     }
 
 
-def _attention_insert_pos(member: str, n_items: int) -> int:
-    """Stable per-member insertion position for the attention check."""
-    return sum(ord(c) for c in member) % max(n_items - 1, 1) + 1
-
-
-def _save_feedback(code: str, member: str, payload: dict) -> None:
-    """Write responses to session JSON and to a standalone file."""
+def _save_feedback(code: str, member: str, payload: dict, both_passed: bool) -> None:
+    """Always persist to session JSON; write standalone file only when both attention checks pass."""
     gd = _load_session(code)
     if gd is not None:
         gd.setdefault("feedback_responses", {})[member] = payload
         _save_session(gd)
 
-    slug  = member.lower().replace(" ", "_")
-    ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
-    fname = FEEDBACK_DIR / f"feedback_{code}_{slug}_{ts}.json"
-    with open(fname, "w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "group_code":  code,
-                "participant": member,
-                "submitted_at": datetime.now().isoformat(),
-                **payload,
-            },
-            f,
-            indent=2,
-            ensure_ascii=False,
-        )
+    if both_passed:
+        slug  = member.lower().replace(" ", "_")
+        ts    = datetime.now().strftime("%Y%m%d_%H%M%S")
+        fname = FEEDBACK_DIR / f"feedback_{code}_{slug}_{ts}.json"
+        with open(fname, "w", encoding="utf-8") as f:
+            json.dump(
+                {
+                    "group_code":  code,
+                    "participant": member,
+                    "submitted_at": datetime.now().isoformat(),
+                    **payload,
+                },
+                f,
+                indent=2,
+                ensure_ascii=False,
+            )
 
 
 # ── Page view ─────────────────────────────────────────────────────────────────
@@ -250,6 +284,18 @@ def page_feedback():
                 st.rerun()
         return
 
+    # ── Force radio option labels to dark text (overrides global white CSS) ──
+    st.markdown("""
+<style>
+/* Radio option labels inside the feedback form */
+div[role="radiogroup"] label,
+div[role="radiogroup"] label p,
+div[role="radiogroup"] span[data-testid="stMarkdownContainer"] p {
+    color: #2C3E50 !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
     # ── Header ────────────────────────────────────────────────────────────────
     st.markdown(
         '<div class="card-blue">'
@@ -260,14 +306,6 @@ def page_feedback():
         'This takes about 3–4 minutes.'
         '</p></div>',
         unsafe_allow_html=True,
-    )
-
-    # Stable attention-check insertion position for this member
-    _as_insert_pos = _attention_insert_pos(member, len(AI_SCAFFOLDING_ITEMS))
-    as_items_with_attn = (
-        AI_SCAFFOLDING_ITEMS[:_as_insert_pos]
-        + [_ATTENTION_ITEM]
-        + AI_SCAFFOLDING_ITEMS[_as_insert_pos:]
     )
 
     with st.form("feedback_form"):
@@ -285,36 +323,12 @@ def page_feedback():
         )
 
         as_raw: dict[str, str | None] = {}
-        for item in as_items_with_attn:
-            if item["construct"] == "Attention_Check":
-                st.markdown(
-                    '<div style="background:#FFF8E7;border-left:3px solid #F39C12;'
-                    'border-radius:0 8px 8px 0;padding:8px 14px;margin:8px 0 4px;'
-                    'font-size:0.87rem;color:#5D4037">'
-                    f'<em>{_ATTENTION_ITEM["statement"]}</em>'
-                    '</div>',
-                    unsafe_allow_html=True,
-                )
-                as_raw["AC1"] = st.radio(
-                    _ATTENTION_ITEM["statement"],
-                    options=_LIKERT_9,
-                    index=None,
-                    key="item_AC1",
-                    label_visibility="collapsed",
-                    horizontal=True,
-                )
-                st.markdown("")
-            else:
-                st.markdown(f"**{item['code']}. {item['statement']}**")
-                as_raw[item["code"]] = st.radio(
-                    item["statement"],
-                    options=_LIKERT_9,
-                    index=None,
-                    key=f"item_{item['code']}",
-                    label_visibility="collapsed",
-                    horizontal=True,
-                )
-                st.markdown("")
+        for item in _AS_ITEMS_ORDERED:
+            as_raw[item["code"]] = _likert_radio(
+                item["statement"] if item["construct"] == "Attention_Check"
+                else f"{item['code']}. {item['statement']}",
+                f"item_{item['code']}",
+            )
 
         # ── Section B: Group Collaboration ───────────────────────────────────
         st.markdown(
@@ -330,16 +344,10 @@ def page_feedback():
 
         gc_raw: dict[str, str | None] = {}
         for item in GROUP_COLLAB_ITEMS:
-            st.markdown(f"**{item['code']}. {item['statement']}**")
-            gc_raw[item["code"]] = st.radio(
-                item["statement"],
-                options=_LIKERT_9,
-                index=None,
-                key=f"item_{item['code']}",
-                label_visibility="collapsed",
-                horizontal=True,
+            gc_raw[item["code"]] = _likert_radio(
+                f"{item['code']}. {item['statement']}",
+                f"item_{item['code']}",
             )
-            st.markdown("")
 
         # ── Section C: Learning Outcomes ─────────────────────────────────────
         st.markdown(
@@ -354,17 +362,12 @@ def page_feedback():
         )
 
         lo_raw: dict[str, str | None] = {}
-        for item in LEARNING_OUTCOME_ITEMS:
-            st.markdown(f"**{item['code']}. {item['statement']}**")
-            lo_raw[item["code"]] = st.radio(
-                item["statement"],
-                options=_LIKERT_9,
-                index=None,
-                key=f"item_{item['code']}",
-                label_visibility="collapsed",
-                horizontal=True,
+        for item in _LO_ITEMS_ORDERED:
+            lo_raw[item["code"]] = _likert_radio(
+                item["statement"] if item["construct"] == "Attention_Check"
+                else f"{item['code']}. {item['statement']}",
+                f"item_{item['code']}",
             )
-            st.markdown("")
 
         # ── Section D: Agent Perception ──────────────────────────────────────
         st.markdown(
@@ -441,15 +444,15 @@ def page_feedback():
         )
 
         if submitted:
-            # ── Validation ───────────────────────────────────────────────────
+            # ── Completeness check (attention check items are required too) ──
             missing: list[str] = []
-            for item in AI_SCAFFOLDING_ITEMS:
+            for item in _AS_ITEMS_ORDERED:
                 if as_raw.get(item["code"]) is None:
                     missing.append(item["code"])
             for item in GROUP_COLLAB_ITEMS:
                 if gc_raw.get(item["code"]) is None:
                     missing.append(item["code"])
-            for item in LEARNING_OUTCOME_ITEMS:
+            for item in _LO_ITEMS_ORDERED:
                 if lo_raw.get(item["code"]) is None:
                     missing.append(item["code"])
             if agent_diff is None:
@@ -462,10 +465,14 @@ def page_feedback():
                     f"Please answer all required questions. Missing: {', '.join(missing)}"
                 )
             else:
-                # ── Build payload ─────────────────────────────────────────
-                attn_label = as_raw.get("AC1")
-                attn_pass  = _likert_value(attn_label) == 5
+                # ── Attention check evaluation ────────────────────────────
+                ac1_val      = _likert_value(as_raw.get("AC1"))
+                ac2_val      = _likert_value(lo_raw.get("AC2"))
+                ac1_pass     = ac1_val == _ATTENTION_ITEM_1["correct_value"]
+                ac2_pass     = ac2_val == _ATTENTION_ITEM_2["correct_value"]
+                both_passed  = ac1_pass and ac2_pass
 
+                # ── Build payload ─────────────────────────────────────────
                 payload = {
                     "ai_scaffolding": {
                         "items": {
@@ -494,11 +501,18 @@ def page_feedback():
                             [_likert_value(lo_raw.get(i["code"])) for i in LEARNING_OUTCOME_ITEMS]
                         ),
                     },
-                    "attention_check": {
-                        "response_label":   attn_label,
-                        "response_value":   _likert_value(attn_label),
-                        "passed":           attn_pass,
-                        "inserted_at_pos":  _as_insert_pos,
+                    "attention_checks": {
+                        "AC1": {
+                            "response_value": ac1_val,
+                            "correct_value":  _ATTENTION_ITEM_1["correct_value"],
+                            "passed":         ac1_pass,
+                        },
+                        "AC2": {
+                            "response_value": ac2_val,
+                            "correct_value":  _ATTENTION_ITEM_2["correct_value"],
+                            "passed":         ac2_pass,
+                        },
+                        "both_passed": both_passed,
                     },
                     "agent_differentiation": {
                         "response":  agent_diff,
@@ -512,12 +526,12 @@ def page_feedback():
                         "other":        other_comments.strip(),
                     },
                     "metadata": {
-                        "submitted_at":           datetime.now().isoformat(),
-                        "participant":            member,
-                        "group_code":             code,
-                        "attention_check_passed": attn_pass,
+                        "submitted_at":        datetime.now().isoformat(),
+                        "participant":         member,
+                        "group_code":          code,
+                        "attention_checks_passed": both_passed,
                     },
                 }
 
-                _save_feedback(code, member, payload)
+                _save_feedback(code, member, payload, both_passed)
                 st.rerun()
