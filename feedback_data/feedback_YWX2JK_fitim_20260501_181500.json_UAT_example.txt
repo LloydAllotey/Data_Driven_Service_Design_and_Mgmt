@@ -1,0 +1,134 @@
+{
+  "group_code": "YWX2JK",
+  "participant": "Fitim",
+  "submitted_at": "2026-05-01T18:15:00.003849",
+  "ai_scaffolding": {
+    "items": {
+      "AS1": {
+        "construct": "AI_Scaffolding",
+        "code": "AS1",
+        "statement": "The AI feedback on my individual submission helped me deepen my analysis of the Alpes Bank case.",
+        "response_label": "7",
+        "response_value": 7
+      },
+      "AS2": {
+        "construct": "AI_Scaffolding",
+        "code": "AS2",
+        "statement": "The scaffolding questions posed by the AI encouraged me to think beyond my assigned section.",
+        "response_label": "9",
+        "response_value": 9
+      },
+      "AS3": {
+        "construct": "AI_Scaffolding",
+        "code": "AS3",
+        "statement": "The Group Alignment Agent's report gave me a clearer understanding of how our sections connect.",
+        "response_label": "8",
+        "response_value": 8
+      },
+      "AS4": {
+        "construct": "AI_Scaffolding",
+        "code": "AS4",
+        "statement": "The AI coaching note during the synthesis round helped me write a more integrated answer.",
+        "response_label": "4",
+        "response_value": 4
+      },
+      "AS5": {
+        "construct": "AI_Scaffolding",
+        "code": "AS5",
+        "statement": "The AI feedback was clear, relevant, and easy to act upon.",
+        "response_label": "7",
+        "response_value": 7
+      }
+    },
+    "mean_score": 7.0
+  },
+  "group_collaboration": {
+    "items": {
+      "GC1": {
+        "construct": "Group_Collaboration",
+        "code": "GC1",
+        "statement": "The jigsaw structure (each member responsible for one section) helped our group cover the case comprehensively.",
+        "response_label": "8",
+        "response_value": 8
+      },
+      "GC2": {
+        "construct": "Group_Collaboration",
+        "code": "GC2",
+        "statement": "Knowing that contribution scores were visible motivated me to engage more thoroughly with the case.",
+        "response_label": "8",
+        "response_value": 8
+      },
+      "GC3": {
+        "construct": "Group_Collaboration",
+        "code": "GC3",
+        "statement": "The group chat was a useful coordination tool during the session.",
+        "response_label": "4",
+        "response_value": 4
+      },
+      "GC4": {
+        "construct": "Group_Collaboration",
+        "code": "GC4",
+        "statement": "The peer comment feature gave me useful perspectives on my submission.",
+        "response_label": "9",
+        "response_value": 9
+      }
+    },
+    "mean_score": 7.25
+  },
+  "learning_outcomes": {
+    "items": {
+      "LO1": {
+        "construct": "Learning_Outcomes",
+        "code": "LO1",
+        "statement": "This session improved my understanding of the strategic trade-offs involved in deploying GenAI at a retail bank.",
+        "response_label": "7",
+        "response_value": 7
+      },
+      "LO2": {
+        "construct": "Learning_Outcomes",
+        "code": "LO2",
+        "statement": "The synthesis round helped me construct a more coherent argument than I would have produced individually.",
+        "response_label": "7",
+        "response_value": 7
+      },
+      "LO3": {
+        "construct": "Learning_Outcomes",
+        "code": "LO3",
+        "statement": "After this session, I feel better equipped to evaluate AI adoption decisions in a professional context.",
+        "response_label": "5",
+        "response_value": 5
+      }
+    },
+    "mean_score": 6.33
+  },
+  "attention_checks": {
+    "AC1": {
+      "response_value": 5,
+      "correct_value": 5,
+      "passed": true
+    },
+    "AC2": {
+      "response_value": 9,
+      "correct_value": 9,
+      "passed": true
+    },
+    "both_passed": true
+  },
+  "agent_differentiation": {
+    "response": "Somewhat — I noticed differences but wasn't always sure which was which",
+    "comment": ""
+  },
+  "overall": {
+    "rating_label": "4 — Good",
+    "rating_value": 4,
+    "best_aspect": "",
+    "improvement": "",
+    "other": ""
+  },
+  "metadata": {
+    "submitted_at": "2026-05-01T18:15:00.002191",
+    "participant": "Fitim",
+    "group_code": "YWX2JK",
+    "attention_checks_passed": true
+  }
+}
